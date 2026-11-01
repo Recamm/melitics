@@ -1,9 +1,9 @@
 # Plan de implementacion: extension propia para MercadoLibre
 
 Fecha: 2026-11-01.
-Estado: analisis estatico completado; hito 1 implementado y verificado.
+Estado: analisis estatico completado; hitos 1 y 2 implementados y verificados.
 Implementacion de la app: autorizada por el usuario para comenzar este plan.
-Proceso guiado: esperar indicacion antes de continuar con el hito 2.
+Proceso guiado: esperar indicacion antes de continuar con el hito 3.
 
 ## Objetivo y restricciones
 
@@ -13,7 +13,7 @@ codigo, marcas, iconos, estilos ni servicios privados de MercadoToolkit.
 
 - Mantener Manifest V3 y el stack React + Vite configurado con createapp.
 - La fase inicial de planificacion fue sin codigo ni dependencias de aplicacion.
-	La autorizacion posterior habilito la implementacion del primer hito.
+	Las autorizaciones posteriores habilitaron los hitos 1 y 2.
 - No modificar la extension instalada ni datos del perfil de Brave.
 - No extraer cookies, credenciales ni informacion privada de la cuenta.
 - No acceder a APIs privadas de MercadoToolkit ni eludir limites o autenticacion.
@@ -459,11 +459,75 @@ no tiene boton/popup ni modifica paginas; esas funciones aun no se implementaron
 Para probar futuros builds, usar un perfil temporal nuevo o recargar explicitamente
 la extension propia. No reemplazar la extension original instalada.
 
+## Avance del hito 2
+
+Autorizacion: el usuario indico "prosegui" tras el cierre del hito 1. Se
+implemento extraccion y normalizacion como modulos locales independientes; no
+se inicio el hito de interfaz ni se ampliaron los permisos del manifiesto.
+
+- Money y PublicPageSnapshot tienen esquemas compartidos estrictos. Los
+	importes se devuelven como enteros seguros y los campos ausentes como null.
+- parseMoney separa precios decimales de maquina de precios visibles segun
+	locale. ARS y BRL usan dos decimales, CLP ninguno; tambien se conserva USD
+	cuando esta declarado. No se convierten monedas ni se redondea precision
+	invalida. BigInt se usa solo internamente para comprobar el limite seguro;
+	no aparece en snapshots ni mensajes.
+- extractPublicPage valida origen HTTPS argentino y la estructura de ruta
+	antes de consultar el documento. Separa publicacion de catalogo y conserva
+	una publicacion seleccionada explicitamente sin confundirla con el producto.
+	URL canonica y enlaces de vendedor no conservan query ni fragmentos.
+- Prioridad: JSON-LD, metadatos y DOM publico acotado. Soporta arrays, @graph
+	y referencias @id sin seleccionar productos recomendados o identidades
+	contradictorias. Referencias duplicadas/ciclicas, precios de otra publicacion
+	y ofertas multiples ambiguas quedan sin valor; lowPrice no es precio actual.
+- Cada campo encontrado conserva origen y URL de procedencia. Los resultados
+	complete requieren titulo, precio y nombre publico de vendedor; partial
+	preserva los campos validos, y unsupported no incluye un snapshot.
+- No se lee Nordic, cookies, globals de sesion ni estado privado. No se ejecutan
+	scripts, modifican nodos anfitriones, realizan requests ni extraen contactos.
+- Cuatro fixtures HTML propias: publicacion, catalogo, pagina incompleta y ruta
+	no soportada. Los valores de sesion presentes en las fixtures son ficticios
+	y sirven solo para comprobar su exclusion del resultado.
+- jsdom 26.1.0 se instalo solo como dependencia de pruebas, sin scripts de
+	ciclo de vida. Es compatible con Node 24.14.0; jsdom 30.1.3 exige un Node
+	posterior. Vitest separa pruebas unitarias Node y de plataforma en jsdom.
+
+Verificacion realizada:
+
+1. RED/GREEN de importes: 10 casos validos fallaron con el parser provisional;
+	las 39 pruebas monetarias pasaron tras implementarlo.
+2. RED/GREEN de extraccion: 17 casos fallaron antes de implementar la lectura.
+	Se corrigio una inclusion accidental de claves internas que el contrato
+	estricto rechazo aun teniendo valor undefined.
+3. Regresiones RED/GREEN confirmaron y corrigieron rutas privadas anidadas,
+	ofertas ajenas, identificadores contradictorios y coincidencias entre IDs
+	null. Las 34 pruebas del extractor pasaron.
+4. npm run typecheck y npm run build pasaron. npm run test aprobo 113 pruebas:
+	73 nuevas y las 40 del hito 1. npm audit no reporto vulnerabilidades conocidas;
+	git diff --check, contemplando CRLF, y los diagnosticos del editor pasaron.
+
+Comprobacion enfocada reproducible:
+
+```powershell
+npm run test -- src/platforms/mercadolibre/extract.test.ts src/shared/money.test.ts
+npm run typecheck
+npm run build
+```
+
+Limites: solo se acepta el mercado argentino. Las pruebas de formato BRL/CLP
+no certifican Brasil o Chile. Los selectores DOM y la estructura JSON-LD se
+validaron sobre fixtures sinteticas, no sobre publicaciones reales actuales.
+La integracion del extractor con el content script y el popup pertenece al
+hito 3; la base instalada aun no analiza paginas ni ofrece interfaz. El worker
+sigue exponiendo solo estado y preferencias. El build actual pesa 96.36 kB;
+la carga real en Brave documentada arriba corresponde al build del hito 1.
+
 Estado de avance:
 
 - [x] Hito 1: base instalable y permisos.
-- [ ] Hito 2: extraccion y normalizacion; pendiente de indicacion para continuar.
-- [ ] Hitos 3-8: no iniciados.
+- [x] Hito 2: extraccion y normalizacion.
+- [ ] Hito 3: vista rapida y navegacion; pendiente de indicacion para continuar.
+- [ ] Hitos 4-8: no iniciados.
 
 ## Validacion y pendientes del plan
 
