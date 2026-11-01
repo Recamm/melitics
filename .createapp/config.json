@@ -1,0 +1,29 @@
+{
+  "name": "meliextension",
+  "directory": ".",
+  "agent": "copilot",
+  "agents": [
+    "copilot"
+  ],
+  "stack": "react-vite",
+  "template": "config-only",
+  "mode": "balanced",
+  "coordinator": "superpowers",
+  "testing": "balanced",
+  "autonomy": "guided",
+  "parallel": false,
+  "design": "balanced",
+  "database": "none",
+  "goal": "Extension propia para Brave y Chrome (Manifest V3), TypeScript y React con Vite, destinada a analizar publicaciones de MercadoLibre. Referencia funcional: MercadoLibre Herramientas con IA / MercadoToolkit, ID agkdknlphoikfmliifdcdgijjhmcjile, version instalada 1.0.43. Fase actual: analisis de solo lectura y plan; NO crear codigo de aplicacion, scaffold, package.json ni instalar dependencias del producto hasta autorizacion expresa del usuario. No copiar codigo, marca ni recursos propietarios sin licencia o permiso. Implementacion independiente; permisos minimos, sin cookies ni credenciales extraidas. Vista rapida, calculadora de tarifas verificadas, historial propio de precios; IA y Buybox sujetos a fuentes autorizadas y backend propio. No reutilizar ni eludir autenticacion, limites o pagos de servicios privados de MercadoToolkit. Comunicacion en espanol. Preparacion autorizada: solo skills e instrucciones mediante createapp.",
+  "skills": null,
+  "packs": [
+    "addy",
+    "anthropic",
+    "ponytail",
+    "superpowers",
+    "uiux"
+  ],
+  "vercel_react": true,
+  "vercel_web": true,
+  "vercel_composition": false
+}

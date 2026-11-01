@@ -1,0 +1,14 @@
+
+
+# CreateApp: archivos locales
+.createapp/tools/
+
+# Extension: dependencies and generated output
+node_modules/
+.wxt/
+.output/
+coverage/
+test-results/
+.env
+.env.*
+!.env.example
