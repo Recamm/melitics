@@ -22,8 +22,8 @@ provisional MeliExtension, sin marcas ni recursos de MercadoToolkit.
 - Fuentes, iconos y estilos se empaquetan localmente. Imagenes de producto
   limitadas al CDN publico mlstatic, sin referrer y sin cookies extraidas.
 
-- Rentabilidad comparte panel y popup mediante dos pestanas accesibles: Resumen
-  y Rentabilidad. Flechas/Home/End cambian de vista sin perder el borrador local.
+- Rentabilidad comparte panel y popup mediante pestanas accesibles. Resumen,
+  Rentabilidad e Historial; flechas/Home/End cambian de vista sin perder el borrador local.
   Cargos manuales vacios, importes decimales locales, errores por campo y moneda
   explicita; no conversiones ni tarifas oficiales supuestas. No usar tarjetas
   para agrupar formulario o resultados.
@@ -35,5 +35,18 @@ provisional MeliExtension, sin marcas ni recursos de MercadoToolkit.
   o cambio de moneda. Vive solo en memoria, no en la pagina anfitriona ni un
   servicio remoto. El almacenamiento historico pertenece al hito 5.
 
-La identidad definitiva, historial, ofertas y contactos pertenecen a sus hitos.
+- Historial con seguimiento y captura explicitamente separados, indicador de
+  ultima captura UTC, periodos 7/30/90 dias, moneda y cobertura faltante. Tabla
+  paginada con precio y procedencia; sin precios anteriores inventados.
+- Gestion de historial en una pestana propia, con lista lateral en escritorio
+  y secciones apiladas en movil. Grafico modular diferido solo alli, no en el
+  script de cada publicacion. Huecos por precio ausente, otra moneda o mas de
+  24 horas sin capturas; importes exactos disponibles en la tabla.
+- Limites locales visibles y confirmaciones nativas para importacion, retencion
+  y eliminaciones. Cancelar recibe el foco inicial; Escape no modifica datos.
+  Errores de cuota visibles tambien dentro del modal, con opcion de reintentar.
+- JSON/CSV propios versionados, sin conversion monetaria ni conexion remota.
+  Dejar de seguir conserva el historial; no hay limpieza o rastreo automatico.
+
+La identidad definitiva, ofertas y contactos pertenecen a sus hitos.
 Las pruebas con fixtures no certifican publicaciones reales.

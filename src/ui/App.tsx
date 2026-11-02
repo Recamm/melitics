@@ -1,8 +1,9 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { Calculator, ExternalLink, List, Package, PanelRightOpen, RefreshCw, Store, X } from 'lucide-react';
+import { Calculator, ExternalLink, History, List, Package, PanelRightOpen, RefreshCw, Settings, Store, X } from 'lucide-react';
 import type { PanelState, Preferences } from '../shared/contracts';
 import { formatMoney } from '../shared/money';
 import { FeesView } from '../features/fees/FeesView';
+import { HistoryView } from '../features/history/HistoryView';
 
 export type AppProps = {
   state: PanelState;
@@ -13,6 +14,7 @@ export type AppProps = {
   preferences?: Preferences;
   onToggle?: (enabled: boolean) => void;
   autoFocus?: boolean;
+  onManage?: (key: string | null) => Promise<void>;
 };
 
 const sourceNames = { 'json-ld': 'JSON-LD', meta: 'Metadatos', dom: 'P\u00e1gina', url: 'URL' };
@@ -24,8 +26,9 @@ export function App(props: AppProps) {
   const title = useRef<HTMLHeadingElement>(null);
   const tabs = useRef<HTMLDivElement>(null);
   const initialFocus = useRef(false);
-  const [view, setView] = useState<'summary' | 'fees'>('summary');
+  const [view, setView] = useState<'summary' | 'fees' | 'history'>('summary');
   const [failedImage, setFailedImage] = useState<string | null>(null);
+  const [managementError, setManagementError] = useState(false);
   useEffect(() => {
     if (props.autoFocus && !initialFocus.current && title.current) { title.current.focus(); initialFocus.current = true; }
   }, [props.autoFocus, snapshot?.canonicalUrl]);
@@ -35,7 +38,7 @@ export function App(props: AppProps) {
   const image = snapshot?.imageUrl && snapshot.imageUrl !== failedImage ? snapshot.imageUrl : null;
   const feeIdentity = `${snapshot?.listingId ?? snapshot?.productId ?? 'manual'}:${snapshot?.canonicalUrl ?? 'manual'}:${snapshot?.price?.currency ?? 'ARS'}`;
 
-  function selectView(next: 'summary' | 'fees'): void {
+  function selectView(next: 'summary' | 'fees' | 'history'): void {
     setView(next);
     tabs.current?.querySelector<HTMLButtonElement>(`[data-view="${next}"]`)?.focus();
   }
@@ -46,21 +49,25 @@ export function App(props: AppProps) {
     <header className="app-toolbar">
       <div className="brand" translate="no"><span className="brand-mark"><Package size={17} aria-hidden="true" /></span><strong>MeliExtension</strong></div>
       <div className="toolbar-actions">
+        {props.onManage ? <button className="icon-button" aria-label="Gestionar historial" data-tooltip="Gestionar historial" onClick={() => { setManagementError(false); void props.onManage?.(null).catch(() => setManagementError(true)); }}><Settings size={17} aria-hidden="true" /></button> : null}
         <button className="icon-button" aria-label="Actualizar datos" data-tooltip="Actualizar datos" onClick={props.onRefresh}><RefreshCw size={17} aria-hidden="true" /></button>
         {props.onClose ? <button className="icon-button" aria-label="Cerrar panel" data-tooltip="Cerrar panel" onClick={props.onClose}><X size={18} aria-hidden="true" /></button> : null}
       </div>
     </header>
     <div ref={tabs} className="view-tabs" role="tablist" aria-label="Vistas" onKeyDown={(event) => {
-      const next = event.key === 'Home' ? 'summary' : event.key === 'End' ? 'fees'
-        : event.key === 'ArrowLeft' || event.key === 'ArrowRight' ? view === 'summary' ? 'fees' : 'summary' : null;
+      const views = ['summary', 'fees', 'history'] as const;
+      const next = event.key === 'Home' ? 'summary' : event.key === 'End' ? 'history'
+        : event.key === 'ArrowLeft' || event.key === 'ArrowRight' ? views[(views.indexOf(view) + (event.key === 'ArrowRight' ? 1 : 2)) % 3] : null;
       if (next) { event.preventDefault(); selectView(next); }
     }}>
       <button className="view-tab" id={`${titleId}-summary-tab`} role="tab" data-view="summary" aria-selected={view === 'summary'} aria-controls={`${titleId}-summary`} tabIndex={view === 'summary' ? 0 : -1} onClick={() => selectView('summary')}><List size={15} aria-hidden="true" /><span>Resumen</span></button>
       <button className="view-tab" id={`${titleId}-fees-tab`} role="tab" data-view="fees" aria-selected={view === 'fees'} aria-controls={`${titleId}-fees`} tabIndex={view === 'fees' ? 0 : -1} onClick={() => selectView('fees')}><Calculator size={15} aria-hidden="true" /><span>Rentabilidad</span></button>
+      <button className="view-tab" id={`${titleId}-history-tab`} role="tab" data-view="history" aria-selected={view === 'history'} aria-controls={`${titleId}-history`} tabIndex={view === 'history' ? 0 : -1} onClick={() => selectView('history')}><History size={15} aria-hidden="true" /><span>Historial</span></button>
     </div>
     <div className="app-scroll">
       <div className="capture-line" role="status"><span className={`status-dot ${state.stale || partial || state.status === 'error' || state.status === 'unsupported' ? 'warning' : ''}`} /><span>{badge}</span><span className="market">MLA</span></div>
       {state.message ? <p className="state-message" role={state.status === 'error' ? 'alert' : 'status'}>{state.message}</p> : null}
+      {managementError ? <p className="state-message" role="alert">No se pudo abrir la gesti&oacute;n del historial.</p> : null}
       <div id={`${titleId}-summary`} role="tabpanel" aria-labelledby={`${titleId}-summary-tab`} hidden={view !== 'summary'}>
       {snapshot ? <>
         <section className="product-summary" aria-labelledby={titleId}>
@@ -79,6 +86,9 @@ export function App(props: AppProps) {
       </div>
       <div id={`${titleId}-fees`} role="tabpanel" aria-labelledby={`${titleId}-fees-tab`} hidden={view !== 'fees'}>
         <FeesView key={feeIdentity} price={snapshot?.price ?? null} title={snapshot?.title ?? null} />
+      </div>
+      <div id={`${titleId}-history`} role="tabpanel" aria-labelledby={`${titleId}-history-tab`} hidden={view !== 'history'}>
+        {view === 'history' ? <HistoryView key={snapshot?.listingId ?? snapshot?.productId ?? 'none'} snapshot={snapshot} disabled={state.stale || state.status !== 'ready'} {...(props.onManage ? { onManage: props.onManage } : {})} /> : null}
       </div>
     </div>
     {mode === 'popup' ? <footer className="popup-controls"><label className="preference"><input type="checkbox" name="panelEnabled" checked={props.preferences?.panelEnabled ?? false} disabled={!props.preferences || !props.onToggle} onChange={(event) => props.onToggle?.(event.currentTarget.checked)} />Panel en publicaciones</label><button className="primary-button" onClick={props.onOpen} disabled={!snapshot || !props.onOpen}><PanelRightOpen size={17} aria-hidden="true" />Abrir panel</button></footer> : null}

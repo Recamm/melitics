@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { browser } from 'wxt/browser';
 import { App } from '../../src/ui/App';
 import '../../src/ui/styles.css';
-import { panelRequest, workerRequest } from '../../src/messaging/client';
+import { historyRequest, panelRequest, workerRequest } from '../../src/messaging/client';
 import { panelChangedSchema } from '../../src/messaging/protocol';
 import { preferencesSchema, type PanelState, type Preferences } from '../../src/shared/contracts';
 import { marketplaceUrl } from '../../src/platforms/mercadolibre/markets';
@@ -87,7 +87,7 @@ function Popup() {
     } finally { saving.current = false; }
   }
 
-  return <App state={state} mode="popup" onRefresh={() => { void refresh(); }} onOpen={() => { void open(); }}
+  return <App state={state} mode="popup" onManage={async key => { await historyRequest('history.manage', { key }, 'done'); }} onRefresh={() => { void refresh(); }} onOpen={() => { void open(); }}
     {...(preferences ? { preferences } : {})} onToggle={(enabled) => { void toggle(enabled); }} />;
 }
 

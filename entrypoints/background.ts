@@ -1,9 +1,13 @@
 import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
-import { createMessageHandler, errorResponse, panelChangedSchema } from '../src/messaging/protocol';
+import { createHistoryMessageHandler, createMessageHandler, errorResponse, panelChangedSchema } from '../src/messaging/protocol';
+import { createHistoryStore } from '../src/background/store';
 import { DEFAULT_PREFERENCES, preferencesSchema } from '../src/shared/contracts';
 
 export default defineBackground(() => {
+	const handleHistory = createHistoryMessageHandler({ extensionId: browser.runtime.id, history: createHistoryStore(),
+		open: async (key) => { await browser.tabs.create({ url: browser.runtime.getURL('/options.html') + (key ? `#${encodeURIComponent(key)}` : '') }); },
+	});
 	const handleMessage = createMessageHandler({
 		extensionId: browser.runtime.id,
 		initialize: async () => {
@@ -23,7 +27,9 @@ export default defineBackground(() => {
 
 	browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
 		if (sender.id === browser.runtime.id && panelChangedSchema.safeParse(message).success) return false;
-		void handleMessage(message, sender).then(sendResponse, () => {
+		const handler = message && typeof message === 'object' && 'operation' in message
+			&& typeof message.operation === 'string' && message.operation.startsWith('history.') ? handleHistory : handleMessage;
+		void handler(message, sender).then(sendResponse, () => {
 			sendResponse(errorResponse('internal', 'No se pudo procesar el mensaje.'));
 		});
 		return true;

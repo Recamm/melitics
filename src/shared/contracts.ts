@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { marketplaceUrl, pageIdentity } from '../platforms/mercadolibre/markets';
 
 export const currencySchema = z.enum(['ARS', 'BRL', 'CLP', 'USD']);
 export const CURRENCY_EXPONENTS = { ARS: 2, BRL: 2, CLP: 0, USD: 2 } as const;
@@ -99,6 +100,74 @@ export const publicPageSnapshotSchema = z.strictObject({
 
 export type PublicPageSnapshot = z.infer<typeof publicPageSnapshotSchema>;
 
+export const publicationKeySchema = z.string().regex(/^MLA:(listing|catalog):MLA[1-9][0-9]{4,19}$/);
+
+function safeHistoryUrl(value: string): boolean {
+  const url = marketplaceUrl(value);
+  return value.length <= 2048 && !!url && !url.search && !url.hash && value === `${url.origin}${url.pathname}`;
+}
+
+export const historySnapshotSchema = publicPageSnapshotSchema.safeExtend({ observedAt: z.iso.datetime().transform(value => new Date(value).toISOString()) }).refine((snapshot) => {
+  const url = marketplaceUrl(snapshot.canonicalUrl);
+  const identity = url && pageIdentity(url);
+  const sellerUrl = snapshot.seller?.url ? marketplaceUrl(snapshot.seller.url) : null;
+  return identity && safeHistoryUrl(snapshot.canonicalUrl) && identity.kind === snapshot.kind
+    && (identity.kind === 'listing' ? identity.listingId === snapshot.listingId : identity.productId === snapshot.productId)
+    && (!snapshot.imageUrl || snapshot.imageUrl.length <= 2048)
+    && (!snapshot.seller?.url || (safeHistoryUrl(snapshot.seller.url) && sellerUrl && /^\/(?:perfil|tienda)\/[^/]+\/?$/i.test(sellerUrl.pathname)))
+    && Object.values(snapshot.provenance).every((field) => {
+      if (!field) return true;
+      const sourceUrl = marketplaceUrl(field.url); const source = sourceUrl && pageIdentity(sourceUrl);
+      return safeHistoryUrl(field.url) && source && (source.kind === 'listing' ? source.listingId === snapshot.listingId : source.productId === snapshot.productId);
+    });
+});
+
+export function publicationKey(snapshot: PublicPageSnapshot): string {
+  return `MLA:${snapshot.listingId ? 'listing' : 'catalog'}:${snapshot.listingId ?? snapshot.productId}`;
+}
+
+export const followedPublicationSchema = z.strictObject({
+  key: publicationKeySchema,
+  snapshot: historySnapshotSchema,
+  following: z.boolean(),
+  followedAt: z.iso.datetime(),
+}).refine((publication) => publication.key === publicationKey(publication.snapshot));
+
+export type FollowedPublication = z.infer<typeof followedPublicationSchema>;
+export const priceObservationSchema = z.strictObject({
+  id: z.string().min(1).max(512),
+  publicationKey: publicationKeySchema,
+  snapshot: historySnapshotSchema,
+}).refine((observation) => observation.publicationKey === publicationKey(observation.snapshot) && observation.id === observationId(observation.snapshot));
+
+export type PriceObservation = z.infer<typeof priceObservationSchema>;
+export function observationId(snapshot: PublicPageSnapshot): string {
+  return JSON.stringify([publicationKey(snapshot), snapshot.observedAt, snapshot.price?.currency ?? null,
+    snapshot.provenance.price?.source ?? snapshot.extractorRevision]);
+}
+
+export const historyDataSchema = z.strictObject({
+  publication: followedPublicationSchema.nullable(),
+  observations: z.array(priceObservationSchema).max(50000),
+});
+export type HistoryData = z.infer<typeof historyDataSchema>;
+
+export const historyArchiveSchema = z.strictObject({
+  schemaVersion: z.literal(1), exportedAt: z.iso.datetime(),
+  publications: z.array(followedPublicationSchema).max(100),
+  observations: z.array(priceObservationSchema).max(50000),
+}).refine((archive) => {
+  const keys = new Set(archive.publications.map(publication => publication.key));
+  return keys.size === archive.publications.length && archive.observations.every(observation => keys.has(observation.publicationKey));
+});
+export type HistoryArchive = z.infer<typeof historyArchiveSchema>;
+export const historyInfoSchema = z.strictObject({
+  publicationCount: z.number().int().min(0).max(100), observationCount: z.number().int().min(0).max(50000),
+  publicationLimit: z.literal(100), observationLimit: z.literal(50000),
+  retentionDays: z.union([z.literal(7), z.literal(30), z.literal(90)]),
+});
+export type HistoryInfo = z.infer<typeof historyInfoSchema>;
+
 export const extractionResultSchema = z.discriminatedUnion('status', [
   z.strictObject({
     status: z.enum(['complete', 'partial']),
@@ -136,25 +205,25 @@ export const DEFAULT_PREFERENCES: Readonly<Preferences> = {
 };
 
 export const runtimeStatusSchema = z.strictObject({
-  completedMilestone: z.literal(4),
+  completedMilestone: z.literal(5),
   mode: z.literal('local'),
   networkEnabled: z.literal(false),
   capabilities: z.strictObject({
     analysis: z.literal('available'),
     profitability: z.literal('available'),
-    history: z.literal('unavailable'),
+    history: z.literal('available'),
     assistant: z.literal('disabled'),
   }),
 });
 
 export const RUNTIME_STATUS: z.infer<typeof runtimeStatusSchema> = {
-  completedMilestone: 4,
+  completedMilestone: 5,
   mode: 'local',
   networkEnabled: false,
   capabilities: {
     analysis: 'available',
     profitability: 'available',
-    history: 'unavailable',
+    history: 'available',
     assistant: 'disabled',
   },
 };

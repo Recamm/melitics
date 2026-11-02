@@ -4,7 +4,7 @@ import { defineContentScript } from 'wxt/utils/define-content-script';
 import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import { App } from '../src/ui/App';
 import '../src/ui/styles.css';
-import { workerRequest } from '../src/messaging/client';
+import { historyRequest, workerRequest } from '../src/messaging/client';
 import { errorResponse, panelRequestSchema, preferencesChangedSchema } from '../src/messaging/protocol';
 import { preferencesSchema, PROTOCOL_VERSION, type PanelState } from '../src/shared/contracts';
 import { extractPublicPage } from '../src/platforms/mercadolibre/extract';
@@ -62,7 +62,7 @@ export default defineContentScript({
               },
               publish: (next) => {
                 state = next;
-                root.render(<App state={next} mode="panel" autoFocus={focus} onRefresh={() => controller.navigate(location.href)} onClose={() => { manuallyClosed = true; close(); }} />);
+                root.render(<App state={next} mode="panel" autoFocus={focus} onManage={async key => { await historyRequest('history.manage', { key }, 'done'); }} onRefresh={() => controller.navigate(location.href)} onClose={() => { manuallyClosed = true; close(); }} />);
                 if (ctx.isValid) void browser.runtime.sendMessage({ type: 'panel.changed', state: next }).catch(() => undefined);
               },
             });

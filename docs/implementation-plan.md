@@ -1,9 +1,9 @@
 # Plan de implementacion: extension propia para MercadoLibre
 
 Fecha: 2026-11-01.
-Estado: analisis estatico completado; hitos 1-4 implementados y verificados.
+Estado: analisis estatico completado; hitos 1-5 implementados y verificados.
 Implementacion de la app: autorizada por el usuario para comenzar este plan.
-Proceso guiado: esperar indicacion antes de continuar con el hito 5.
+Proceso guiado: esperar indicacion antes de continuar con el hito 6.
 
 ## Objetivo y restricciones
 
@@ -703,13 +703,114 @@ ellos. La persistencia historica es alcance del hito 5. BRL/CLP/USD certifican
 solo aritmetica/formato, no extraccion de otros mercados. Se mantienen los
 limites de pruebas sinteticas, Chrome minimo no instalado y toolbar del hito 3.
 
+## Hito 5 implementado
+
+Autorizacion: el usuario indico "prosegui" tras el cierre del hito 4.
+
+Resultado:
+
+- IndexedDB local version 1 mediante idb 8.0.4: publicaciones, observaciones,
+	contactos reservados para el hito 6 y retencion propuesta. Apertura diferida,
+	reapertura tras cierre, transacciones serializadas por el navegador y respuesta
+	solo despues de transaction.done. No se reemplaza un bloque global de datos.
+- Seguir no captura; guardar es un comando explicito sobre la captura publica
+	actual. Dejar de seguir conserva las observaciones anteriores. Capturas viejas
+	no reemplazan la referencia mas reciente. IDs deduplicados por publicacion,
+	instante UTC normalizado, moneda y fuente; un precio ausente queda registrado.
+- Tres pestanas accesibles: Resumen, Rentabilidad e Historial. Ultima captura,
+	procedencia, tabla de 25 filas por pagina, fechas UTC, periodos 7/30/90 dias,
+	minimo/maximo y cambio entre precios observados de una misma moneda. Sin
+	conversiones, precios inferidos ni porcentaje cuando falta un denominador valido.
+- Cobertura por dias UTC observados, no medicion continua. Grafico modular de
+	ECharts 6.1.0 cargado bajo demanda solo en la pagina de gestion; cortes por
+	precios ausentes, moneda distinta o intervalos mayores a 24 horas. La tabla
+	conserva importes enteros exactos, aunque el grafico use coordenadas numericas.
+- Pagina de opciones en una pestana propia: lista sin internet, cambios de
+	seguimiento, archivos, eliminacion por publicacion y borrado total. La apertura
+	desde el panel se solicita al worker; options y el grafico no son recursos
+	publicos del sitio. Permisos siguen siendo storage y el mercado MLA HTTPS.
+- Limites visibles: 100 publicaciones, 50000 observaciones, importaciones de
+	hasta 64 MB. Retencion propuesta de 90 dias, configurable a 7/30/90 solo con
+	confirmacion y limpieza explicita; nunca se aplica al arrancar ni por un timer.
+- Archivo propio schemaVersion=1, JSON y CSV mediante Papa Parse 5.7.0.
+	CSV incluye columnas legibles y payload validado para conservar identidad,
+	moneda, procedencia y fechas. Comillas/saltos de linea y montos seguros hacen
+	roundtrip. Titulos peligrosos se escapan para planillas y se recuperan al importar.
+- Se valida el archivo entero antes de escribir: version, campos estrictos,
+	IDs calculados, relaciones y URLs publicas limpias. Origen ajeno, ruta privada,
+	parametros, identidad contradictoria y datos de sesion se rechazan. Importar
+	combina sin borrar entidades ajenas ni reactivar seguimientos existentes.
+- Cuota o limite excedido abortan la transaccion completa. Importacion, retencion
+	y borrado requieren confirmacion; errores del worker no exponen detalles privados
+	y tambien aparecen dentro del modal para permitir cancelar o reintentar.
+- El worker anuncia completedMilestone=5 y history=available. IA sigue desactivada,
+	sin red propia, alarms, rastreo idle, notificaciones ni captura automatica.
+
+Verificacion realizada:
+
+1. RED/GREEN del store: concurrencia, deduplicacion, reinicio/reapertura, huecos,
+	monedas, URLs privadas, importacion sin perdida, limites y cuota simulada con
+	rollback. Diez pruebas de persistencia con fake-indexeddb 6.2.7.
+2. Cinco pruebas de resumen/grafico y once de transferencias: enteros exactos,
+	UTC, ausencia de precio, futuro, moneda, comillas, formulas, duplicados,
+	version desconocida, campos privados y archivo contradictorio.
+3. Tres pruebas de HistoryView y cuatro de opciones, ademas de regresiones de
+	App/protocolo: ninguna captura al abrir o seguir, datos viejos bloqueados,
+	operaciones administrativas solo desde paginas propias y error modal visible.
+4. npm run typecheck, npm run build y npm run test pasaron: 209 pruebas en
+	14 archivos, 35 mas que al cerrar el hito 4. Auditoria de dependencias de
+	produccion: cero vulnerabilidades conocidas. Manifiesto conserva CSP y permisos.
+5. Brave real, perfil temporal y bundle de produccion: dos pestanas guardan
+	concurrentemente; seis observaciones sobreviven al cierre completo y reapertura
+	del navegador, con opciones consultables offline. Dejar de seguir conserva datos.
+6. Descargas JSON/CSV reales, importacion invalidada sin cambios, mezcla confirmada,
+	duplicados, Escape/cancelacion sin borrar y eliminacion confirmada de una entidad
+	sin afectar la otra. Apertura desde el panel funciona sin exponer opciones via WAR.
+7. SVG renderizado con puntos y huecos, seleccion de moneda, capturas a 1280/320 px
+	y zoom real 200%. Inspeccion visual y metricas de ancho/encuadre sin desborde.
+	Captura del grafico con CDP directo: el clip de Playwright quedaba blanco al
+	combinar scroll profundo con zoom. No se altero el producto para ese problema.
+8. Flujos nativos previos de panel/popup, preferencias, Shadow DOM, estados,
+	navegacion, teclado y rentabilidad al 200% pasaron. Cero errores de pagina.
+
+Comprobacion reproducible:
+
+```powershell
+npm run test -- src/background/store.test.ts src/features/history/history.test.ts src/features/history/transfer.test.ts
+npm run typecheck
+npm run build
+npm run test
+npm audit --omit=dev
+```
+
+Con la herramienta temporal y Brave configurados como en el hito 3:
+
+```powershell
+node tests/browser-smoke.mjs --history-only
+node tests/browser-smoke.mjs --fees-only
+node tests/browser-smoke.mjs
+```
+
+Bundle final: 1.57 MB; grafico diferido de 501.52 kB. Vite avisa por ese chunk
+mayor a 500 kB y por el import dinamico del cliente ya compartido; ECharts no
+entra en el content script. Las herramientas de navegador fueron temporales,
+no dependencias del producto. Los perfiles se eliminan al terminar las pruebas.
+
+Limites: observaciones explicitas propias, no historial comercial ni monitor de
+precios desatendido. Importacion solo de este formato versionado, no de cualquier
+CSV comercial. El limite de archivo y la cuota real del navegador pueden ser
+mas restrictivos que el limite de registros; no se hizo una prueba de carga de
+50000 filas ni se forzo una cuota real en el perfil del usuario. Se mantienen
+las limitaciones de fixtures, Chrome minimo no instalado y toolbar del hito 3.
+
 Estado de avance:
 
 - [x] Hito 1: base instalable y permisos.
 - [x] Hito 2: extraccion y normalizacion.
 - [x] Hito 3: vista rapida y navegacion.
 - [x] Hito 4: calculadora de rentabilidad manual.
-- [ ] Hitos 5-8: no iniciados.
+- [x] Hito 5: seguimiento e historial propio.
+- [ ] Hitos 6-8: no iniciados.
 
 ## Validacion y pendientes del plan
 
@@ -723,7 +824,7 @@ Estado de avance:
 
 Identidad visual acordada en DESIGN.md; el nombre MeliExtension sigue provisional.
 Decisiones pendientes: nombre definitivo y fuentes/presupuesto para hitos 6-7.
-El hito 5, seguimiento e historial propio, espera indicacion conforme al proceso guiado.
+El hito 6, catalogo y Buybox, espera indicacion conforme al proceso guiado.
 La autorizacion de implementacion no es permiso implicito para publicar ni para
 modificar la instalacion existente de Brave.
 
@@ -733,6 +834,10 @@ modificar la instalacion existente de Brave.
 - [WXT: content scripts, Shadow DOM y ciclo de UI](https://wxt.dev/guide/essentials/content-scripts.html).
 - [Chrome: ciclo del service worker](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle).
 - [Chrome: storage y niveles de acceso](https://developer.chrome.com/docs/extensions/reference/api/storage).
+- [idb: transacciones y transaction.done](https://github.com/jakearchibald/idb#transaction-lifetime).
+- [ECharts: importacion modular](https://echarts.apache.org/handbook/en/basics/import/).
+- [Papa Parse: parse/unparse](https://www.papaparse.com/docs).
+- [WXT: opciones de entrypoints HTML](https://wxt.dev/guide/essentials/entrypoints.html).
 
 SHA-256 de los bundles analizados, para identificar la version exacta sin
 incorporar su codigo al repositorio:

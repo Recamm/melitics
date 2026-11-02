@@ -1,5 +1,9 @@
+import 'fake-indexeddb/auto';
+import { deleteDB } from 'idb';
 import { describe, expect, it, vi } from 'vitest';
-import { createMessageHandler } from './protocol';
+import { createHistoryMessageHandler, createMessageHandler } from './protocol';
+import { createHistoryStore } from '../background/store';
+import type { PublicPageSnapshot } from '../shared/contracts';
 
 const extensionId = 'abcdefghijklmnopabcdefghijklmnop';
 const requestId = 'ce155c60-0e5a-4d7f-8295-f9ac878ecb3c';
@@ -31,6 +35,38 @@ function setup() {
 }
 
 describe('message protocol', () => {
+  it('commits explicit public captures while reserving imports and destructive operations to own pages', async () => {
+    const name = `protocol-history-${crypto.randomUUID()}`;
+    const history = createHistoryStore(name);
+    const open = vi.fn(async () => {});
+    const handle = createHistoryMessageHandler({ extensionId, history, open });
+    const snapshot: PublicPageSnapshot = { siteId: 'MLA', locale: 'es-AR', kind: 'catalog', listingId: null, productId: 'MLA12345',
+      canonicalUrl: marketplaceSender.url, title: 'Fixture', price: null, imageUrl: null, seller: null,
+      observedAt: new Date().toISOString(), extractorRevision: 'public-v1', provenance: {} };
+    const message = (operation: string, payload: unknown) => ({ ...request, operation, payload });
+    try {
+      expect(await handle(message('history.manage', { key: 'MLA:catalog:MLA12345' }), marketplaceSender)).toMatchObject({ ok: true });
+      expect(open).toHaveBeenCalledExactlyOnceWith('MLA:catalog:MLA12345');
+      expect(await handle(message('history.follow', { snapshot }), marketplaceSender)).toMatchObject({ ok: true });
+      expect(await handle(message('history.capture', { snapshot }), marketplaceSender)).toMatchObject({ ok: true, data: { kind: 'capture', status: 'recorded' } });
+      expect(await handle(message('history.read', { key: 'MLA:catalog:MLA12345' }), marketplaceSender)).toMatchObject({ ok: true, data: { observations: [ { snapshot } ] } });
+      expect(await handle(message('history.list', {}), extensionSender)).toMatchObject({ ok: true, data: { publications: [ { following: true } ] } });
+      for (const [operation, payload] of [ ['history.list', {}], ['history.export', {}], ['history.clear', { confirmed: true }],
+        ['history.remove', { key: 'MLA:catalog:MLA12345', confirmed: true }], ['history.prune', { days: 90, confirmed: true }],
+        ['history.import', { archive: await history.archive() }], ['history.read', { key: 'MLA:catalog:MLA99999' }] ] as const) {
+        expect(await handle(message(operation, payload), marketplaceSender)).toMatchObject({ ok: false, error: { code: 'forbidden' } });
+      }
+      expect(await history.list()).toHaveLength(1);
+      expect(await handle(message('history.clear', { confirmed: false }), extensionSender)).toMatchObject({ ok: false, error: { code: 'invalid-input' } });
+      expect(await handle(message('history.capture', { snapshot, token: 'private-fixture' }), marketplaceSender)).toMatchObject({ ok: false, error: { code: 'invalid-input' } });
+      expect(await handle(message('history.follow', { snapshot }), { ...marketplaceSender, id: 'foreign' })).toMatchObject({ ok: false, error: { code: 'forbidden' } });
+      const record = vi.spyOn(history, 'record').mockRejectedValueOnce(Object.assign(new Error('private-quota-details'), { code: 'storage-full' }));
+      const failure = await handle(message('history.capture', { snapshot }), marketplaceSender);
+      expect(failure).toMatchObject({ ok: false, error: { code: 'storage-full' } });
+      expect(JSON.stringify(failure)).not.toContain('private-quota-details'); record.mockRestore();
+    } finally { await history.close(); await deleteDB(name); }
+  });
+
   it('saves panel preferences only from a trusted extension page', async () => {
     const save = vi.fn(async () => {});
     const handle = createMessageHandler({ extensionId, initialize: async () => preferences, save });
@@ -66,13 +102,13 @@ describe('message protocol', () => {
       requestId,
       ok: true,
       data: {
-        completedMilestone: 4,
+        completedMilestone: 5,
         mode: 'local',
         networkEnabled: false,
         capabilities: {
           analysis: 'available',
           profitability: 'available',
-          history: 'unavailable',
+          history: 'available',
           assistant: 'disabled',
         },
       },

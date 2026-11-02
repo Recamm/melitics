@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { readFile, mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -12,11 +12,12 @@ const results = process.env.MELI_BROWSER_RESULTS ?? await mkdtemp(path.join(tmpd
 const navigationOnly = process.argv.includes('--navigation-only');
 const popupRacesOnly = process.argv.includes('--popup-races-only');
 const feesOnly = process.argv.includes('--fees-only');
+const historyOnly = process.argv.includes('--history-only');
 await mkdir(results, { recursive: true });
 let context;
 
-try {
-  context = await chromium.launchPersistentContext(profile, {
+function launchBrowser() {
+  return chromium.launchPersistentContext(profile, {
     executablePath: path.join(process.env.ProgramFiles, 'BraveSoftware/Brave-Browser/Application/brave.exe'),
     headless: true,
     ignoreDefaultArgs: ['--disable-extensions'],
@@ -28,12 +29,16 @@ try {
     ],
     timeout: 15000,
   });
+}
+
+try {
+  context = await launchBrowser();
   const errors = [];
   context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
   const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker', { timeout: 15000 });
   const extensionId = new URL(worker.url()).host;
 
-  if (!navigationOnly && !popupRacesOnly && !feesOnly) {
+  if (!navigationOnly && !popupRacesOnly && !feesOnly && !historyOnly) {
     const preview = await context.newPage();
     for (const [state, text] of [
       ['ready', 'Captura actual'], ['partial', 'Datos parciales'], ['loading', 'Actualizando'],
@@ -50,7 +55,7 @@ try {
   const fixture = (await readFile('tests/fixtures/listing.html', 'utf8'))
     .replace('<body>', '<body style="margin:24px;background:#f8faf9;font-family:sans-serif"><main style="border-bottom:1px solid #d9e1dd"><button id="return-focus">Volver al contenido</button>')
     .replace('</body>', '</main></body>');
-  await context.route('https://**.mercadolibre.com.ar/**', route => route.fulfill({ status: 200, contentType: 'text/html', body: fixture }));
+  await context.route('https://**.mercadolibre.com.ar/**', route => route.fulfill({ status: 200, contentType: 'text/html', body: historyOnly && route.request().url().includes('987654321') ? fixture.replaceAll('123456789', '987654321') : fixture }));
   const page = await context.newPage();
   await page.goto('https://articulo.mercadolibre.com.ar/MLA-123456789-camara-_JM');
   const panel = page.locator('meli-extension-panel');
@@ -60,7 +65,119 @@ try {
     version: 1, requestId: crypto.randomUUID(), operation, payload: {},
   }), { tabId, operation });
 
-  if (feesOnly) {
+  if (historyOnly) {
+    const second = await context.newPage();
+    await second.goto('https://articulo.mercadolibre.com.ar/MLA-987654321-camara-_JM');
+    const secondPanel = second.locator('meli-extension-panel');
+    await secondPanel.getByRole('heading', { name: 'Camara de prueba', exact: true }).waitFor();
+    for (const surface of [panel, secondPanel]) {
+      await surface.getByRole('tab', { name: 'Historial', exact: true }).click();
+      await surface.getByRole('button', { name: 'Seguir publicaci\u00f3n', exact: true }).click();
+      await surface.getByRole('button', { name: 'Dejar de seguir', exact: true }).waitFor();
+    }
+    await Promise.all([panel, secondPanel].map(surface => surface.getByRole('button', { name: 'Guardar captura', exact: true }).click()));
+    for (const surface of [panel, secondPanel]) await surface.getByText('Captura guardada.', { exact: true }).waitFor();
+    const managementEvent = context.waitForEvent('page');
+    await panel.getByRole('button', { name: 'Gr\u00e1fico y archivos', exact: true }).click();
+    const management = await managementEvent;
+    await management.getByText('2 / 100 publicaciones', { exact: true }).waitFor();
+    const admin = (operation, payload = {}) => management.evaluate(async ({ operation, payload }) => {
+      const response = await chrome.runtime.sendMessage({ version: 1, requestId: crypto.randomUUID(), operation, payload });
+      if (!response.ok) throw new Error(response.error.code);
+      return response.data;
+    }, { operation, payload });
+    const initial = (await admin('history.export')).archive;
+    assert.equal(initial.observations.length, 2);
+    const input = management.getByLabel('Importar archivo', { exact: true });
+    await input.setInputFiles({ name: 'invalid.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ ...initial, schemaVersion: 99 })) });
+    await management.getByText('Archivo no valido. No se modificaron los datos.', { exact: true }).waitFor();
+    assert.equal((await admin('history.info')).observationCount, 2);
+    const original = initial.observations.find(item => item.publicationKey === 'MLA:listing:MLA123456789');
+    const extra = [ [-4 * 86400000, 1000, 'ARS'], [-2 * 86400000, 800, 'ARS'], [-86400000, null, 'ARS'], [-43200000, 100, 'USD'] ].map(([offset, amount, currency]) => {
+      const snapshot = { ...original.snapshot, observedAt: new Date(Date.now() + offset).toISOString(), title: '=SUM(A1)\n"fixture, propia"',
+        price: amount === null ? null : { amountMinor: amount, currency, exponent: 2 } };
+      return { publicationKey: original.publicationKey, snapshot, id: JSON.stringify([original.publicationKey, snapshot.observedAt, snapshot.price?.currency ?? null, snapshot.provenance.price?.source ?? snapshot.extractorRevision]) };
+    });
+    const imported = { ...initial, observations: [...initial.observations, ...extra] };
+    await input.setInputFiles({ name: 'history.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(imported)) });
+    await management.getByRole('dialog').waitFor();
+    assert.equal(await management.getByRole('button', { name: 'Cancelar', exact: true }).evaluate(el => el === document.activeElement), true);
+    assert.equal((await admin('history.info')).observationCount, 2);
+    await management.getByRole('button', { name: 'Confirmar importaci\u00f3n', exact: true }).click();
+    await management.getByText('6 / 50000 capturas', { exact: true }).waitFor();
+    await management.locator('.history-chart svg').waitFor();
+    assert.equal(await management.locator('.history-chart svg').evaluate(svg => [...svg.querySelectorAll('path')].some(path => path.getAttribute('stroke') === '#12675f' && path.getAttribute('d')?.length > 4)), true);
+    for (const width of [1280, 320]) {
+      await management.setViewportSize({ width, height: 900 });
+      assert.equal(await management.locator('.meli-app').evaluate(el => el.scrollWidth <= el.clientWidth), true);
+      await management.screenshot({ path: path.join(results, `history-options-${width}.png`), fullPage: true });
+    }
+    await management.getByLabel('Moneda', { exact: true }).selectOption('USD');
+    assert.equal(await management.locator('.history-chart figcaption').innerText(), 'Precios observados \u00b7 USD');
+    await management.getByLabel('Moneda', { exact: true }).selectOption('ARS');
+    const optionsId = await management.evaluate(async () => (await chrome.tabs.getCurrent()).id);
+    await worker.evaluate(tabId => chrome.tabs.setZoom(tabId, 2), optionsId);
+    assert.equal(await management.evaluate(() => innerWidth), 160);
+    assert.equal(await management.locator('.meli-app').evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    assert.equal(await management.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await management.screenshot({ path: path.join(results, 'history-options-zoom-200.png') });
+    await management.locator('.history-chart').evaluate(el => el.scrollIntoView({ block: 'center' }));
+    await management.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await management.locator('.history-chart').evaluate(el => { const rect = el.getBoundingClientRect(); return rect.top >= 0 && rect.bottom <= innerHeight; }), true);
+    const screenshotSession = await context.newCDPSession(management);
+    const visibleScreenshot = await screenshotSession.send('Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: false });
+    await writeFile(path.join(results, 'history-chart-zoom-200.png'), Buffer.from(visibleScreenshot.data, 'base64'));
+    await screenshotSession.detach();
+    await worker.evaluate(tabId => chrome.tabs.setZoom(tabId, 1), optionsId);
+    await management.setViewportSize({ width: 1280, height: 900 });
+    for (const format of ['json', 'csv']) {
+      await management.getByLabel('Formato', { exact: true }).selectOption(format);
+      const downloadEvent = management.waitForEvent('download');
+      await management.getByRole('button', { name: 'Exportar historial', exact: true }).click();
+      const download = await downloadEvent; const filename = path.join(results, `history-export.${format}`);
+      await download.saveAs(filename);
+      const text = await readFile(filename, 'utf8');
+      if (format === 'json') assert.equal(JSON.parse(text).observations.length, 6);
+      else {
+        const Papa = createRequire(path.resolve('package.json'))('papaparse');
+        const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+        assert.equal(parsed.errors.length, 0);
+        assert.equal(parsed.data.find(row => row.title.includes('fixture, propia')).title.startsWith("'=SUM"), true);
+        await input.setInputFiles(filename); await management.getByRole('dialog').waitFor();
+        await management.getByRole('button', { name: 'Confirmar importaci\u00f3n', exact: true }).click();
+        await management.getByText('0 capturas importadas; 6 duplicadas.', { exact: true }).waitFor();
+      }
+    }
+    await management.getByLabel('Retenci\u00f3n propuesta', { exact: true }).selectOption('7');
+    await management.getByRole('dialog').waitFor(); await management.keyboard.press('Escape');
+    await management.getByRole('dialog').waitFor({ state: 'hidden' });
+    assert.equal((await admin('history.info')).retentionDays, 90);
+    await management.getByRole('button', { name: 'Borrar todos los datos', exact: true }).click();
+    await management.getByRole('button', { name: 'Cancelar', exact: true }).click();
+    assert.equal(await management.getByRole('button', { name: 'Borrar todos los datos', exact: true }).evaluate(el => el === document.activeElement), true);
+    assert.equal((await admin('history.info')).observationCount, 6);
+    await secondPanel.getByRole('button', { name: 'Dejar de seguir', exact: true }).click();
+    await secondPanel.getByRole('button', { name: 'Seguir publicaci\u00f3n', exact: true }).waitFor();
+    assert.equal(await secondPanel.getByRole('button', { name: 'Guardar captura', exact: true }).isDisabled(), true);
+    const beforeRestart = (await admin('history.export')).archive;
+    await context.close(); context = await launchBrowser();
+    context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
+    await context.setOffline(true);
+    const offline = await context.newPage(); await offline.goto(`chrome-extension://${extensionId}/options.html`);
+    await offline.getByText('6 / 50000 capturas', { exact: true }).waitFor();
+    const afterRestart = await offline.evaluate(async () => {
+      const response = await chrome.runtime.sendMessage({ version: 1, requestId: crypto.randomUUID(), operation: 'history.export', payload: {} });
+      if (!response.ok) throw new Error(response.error.code); return response.data.archive;
+    });
+    assert.deepEqual(afterRestart.observations, beforeRestart.observations);
+    assert.deepEqual(afterRestart.publications, beforeRestart.publications);
+    await offline.getByRole('button', { name: 'Eliminar MLA:listing:MLA123456789', exact: true }).click();
+    await offline.getByRole('button', { name: 'Confirmar borrado', exact: true }).click();
+    await offline.getByText('1 / 100 publicaciones', { exact: true }).waitFor();
+    await offline.getByText('1 / 50000 capturas', { exact: true }).waitFor();
+    assert.deepEqual(errors, []);
+    console.log(JSON.stringify({ phase: 'history', concurrentTabs: true, actualBrowserRestart: true, offline: true, safeTransfers: true, duplicates: true, confirmations: true, chartSvg: true, zoom200: true, screenshots: results }));
+  } else if (feesOnly) {
     const fillScenario = async surface => {
       for (const [label, value] of [
         ['Precio de venta', '100'], ['Costo del producto', '40'], ['Comisi\u00f3n (%)', '10'],

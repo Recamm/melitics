@@ -14,6 +14,7 @@ const manifest = z.looseObject({
   background: z.looseObject({ service_worker: z.string() }),
   content_security_policy: z.looseObject({ extension_pages: z.string() }),
   action: z.strictObject({ default_title: z.string(), default_popup: z.string() }),
+  options_ui: z.strictObject({ page: z.literal('options.html'), open_in_tab: z.literal(true) }),
   content_scripts: z.array(z.looseObject({ matches: z.array(z.string()), js: z.array(z.string()), run_at: z.string() })),
   web_accessible_resources: z.array(z.strictObject({ resources: z.array(z.string()), use_dynamic_url: z.boolean(), matches: z.array(z.string()) })),
 }).parse(JSON.parse(readFileSync(resolve(outputDirectory, 'manifest.json'), 'utf8')));
@@ -41,6 +42,7 @@ describe('production manifest', () => {
     expect(manifest.content_scripts).toEqual([{ matches: ['https://*.mercadolibre.com.ar/*'], run_at: 'document_idle', js: ['content-scripts/mercadolibre.js'] }]);
     expect(manifest.web_accessible_resources).toEqual([{ resources: ['content-scripts/mercadolibre.css'], use_dynamic_url: true, matches: ['https://*.mercadolibre.com.ar/*'] }]);
     expect(existsSync(resolve(outputDirectory, 'popup.html'))).toBe(true);
+    expect(existsSync(resolve(outputDirectory, manifest.options_ui.page))).toBe(true);
   });
 
   it('loads a bundled service worker that exists in the output', () => {
