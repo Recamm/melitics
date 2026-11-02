@@ -1,9 +1,9 @@
 # Plan de implementacion: extension propia para MercadoLibre
 
 Fecha: 2026-11-01.
-Estado: analisis estatico completado; hitos 1 y 2 implementados y verificados.
+Estado: analisis estatico completado; hitos 1, 2 y 3 implementados y verificados.
 Implementacion de la app: autorizada por el usuario para comenzar este plan.
-Proceso guiado: esperar indicacion antes de continuar con el hito 3.
+Proceso guiado: esperar indicacion antes de continuar con el hito 4.
 
 ## Objetivo y restricciones
 
@@ -517,16 +517,103 @@ npm run build
 Limites: solo se acepta el mercado argentino. Las pruebas de formato BRL/CLP
 no certifican Brasil o Chile. Los selectores DOM y la estructura JSON-LD se
 validaron sobre fixtures sinteticas, no sobre publicaciones reales actuales.
-La integracion del extractor con el content script y el popup pertenece al
-hito 3; la base instalada aun no analiza paginas ni ofrece interfaz. El worker
-sigue exponiendo solo estado y preferencias. El build actual pesa 96.36 kB;
+Al cierre del hito 2, la integracion del extractor con el content script y el
+popup pertenecia al hito 3; la base aun no analizaba paginas ni ofrecia interfaz.
+El worker exponia solo estado y preferencias. Ese build pesaba 96.36 kB;
 la carga real en Brave documentada arriba corresponde al build del hito 1.
+
+## Hito 3 implementado
+
+Autorizacion: el usuario indico "prosegui" tras el cierre del hito 2 y eligio
+la identidad blanco, grafito y verde petroleo. DESIGN.md conserva esa decision.
+
+Resultado:
+
+- Panel compacto de hasta 380 px, fuente IBM Plex Sans local e iconos Lucide.
+	Muestra titulo, precio exacto, moneda, publicacion/catalogo, vendedor publico,
+	hora de captura y procedencia por campo; no inventa datos faltantes.
+- Un unico montaje Shadow DOM sobre body, separado del contenedor de la pagina.
+	Apertura desde el popup, actualizacion, cierre, Escape y retorno de foco.
+	No se cambian estilos de elementos anfitriones ni la extension original.
+- Content script solo para HTTPS del mercado argentino. Navegacion por eventos
+	WXT usando newUrl, debounce de 200 ms y cancelacion de solicitudes anteriores.
+	Observacion acotada de datos publicos y cambios directos en sus ancestros;
+	reconexion al sustituir el contenedor y limpieza al cerrar o invalidar.
+- Popup con datos de la pestana activa y preferencias persistidas por el worker
+	en storage.local restringido a contextos confiables. Escrituras serializadas,
+	validacion de mensajes y notificacion a las pestanas del mercado seleccionado.
+	Una generacion por cambio de pestana evita aplicar resultados o errores viejos.
+- Estados de carga, datos parciales, desactualizados, no compatible y error
+	recuperable. Imagen publica HTTPS solo desde mlstatic.com y sus subdominios,
+	sin referrer y con fallback; fuentes WOFF2 locales y CSP sin scripts remotos,
+	eval, objetos ni conexiones externas de servicios. No se agregaron permisos.
+- El worker anuncia el hito 3 y analisis publico disponible. Historial sigue
+	no disponible e IA desactivada; networkEnabled=false se refiere a servicios
+	remotos, no impide las imagenes publicas expresamente autorizadas de la UI.
+- Vista de fixtures en src/ui/preview.html, disponible en desarrollo y fuera
+	del bundle de produccion. Permite revisar ready, loading, partial, stale,
+	error y unsupported mediante el parametro state, sin datos de sesiones reales.
+
+Verificacion realizada:
+
+1. RED/GREEN para navegacion, interfaz, imagen publica, escritura de preferencias
+	 y notificaciones. Regresiones adicionales reprodujeron y corrigieron el
+	 contenedor SPA sustituido, la etiqueta incorrecta de captura vigente en error,
+	 la URL anterior leida durante el evento WXT y dos respuestas tardias del popup.
+2. npm run typecheck, npm run build y 131 pruebas en siete archivos pasaron.
+	 Son 18 casos nuevos respecto de los 113 del hito 2. npm audit encontro cero
+	 vulnerabilidades conocidas; diagnosticos del editor y diff de espacios pasaron.
+3. Extension de produccion cargada en Brave instalado, con perfiles temporales
+	 nuevos por bundle y paginas sinteticas servidas por Playwright. Se verificaron
+	 montaje unico, estilos anfitriones intactos, teclado/foco, apertura/cierre del
+	 popup, preferencias guardadas y propagadas, navegacion SPA y captura eliminada
+	 en ruta no compatible. No hubo errores de pagina.
+4. Capturas inspeccionadas para panel de escritorio, ancho estrecho y popup.
+	 Se probaron paginas de 1280/1920 px, viewport estrecho de 320 px, popup de
+	 380 px y zoom real 200% mediante chrome.tabs.setZoom. El viewport CSS paso
+	 de 1280 a 640 y de 380 a 190 px; contenido desplazable y sin desborde horizontal.
+5. Los seis estados se comprobaron en navegador. Un PNG sintetico verifico carga
+	 de imagen autorizada en panel/popup y ausencia de referrer; no acredita fotos
+	 reales del producto. Las carreras del popup usaron API de pestanas diferida
+	 de prueba, no consultas a datos personales.
+
+Comprobacion reproducible:
+
+```powershell
+npm run typecheck
+npm run build
+npm run test
+```
+
+Para la prueba de navegador en Windows con Brave, iniciar npm run dev -- --port
+5173 en otra terminal. La vista local es
+http://localhost:5173/src/ui/preview.html. Instalar la herramienta solo en una
+carpeta temporal, no como dependencia del producto:
+
+```powershell
+$env:MELI_BROWSER_TOOLS = Join-Path $env:TEMP ('meli-browser-tools-' + [guid]::NewGuid().ToString('N'))
+npm install --prefix $env:MELI_BROWSER_TOOLS playwright-core@1.64.1 --ignore-scripts --no-audit --no-fund
+node tests/browser-smoke.mjs
+node tests/browser-smoke.mjs --navigation-only
+node tests/browser-smoke.mjs --popup-races-only
+```
+
+El script elimina cada perfil temporal al finalizar y comunica la carpeta de
+capturas. La herramienta temporal instalada para esta verificacion se elimino;
+no se instalaron navegadores adicionales. El build de produccion pesa 952.86 kB;
+el CSS del content script bajo de 194.20 a 100.98 kB al conservar solo WOFF2.
+
+Limites: no se certificaron selectores contra publicaciones actuales reales,
+Chrome 120 instalado por separado ni el clic fisico de la toolbar. Se ejercito
+el popup como pagina propia de la extension y se verifico su registro en el
+manifiesto. El perfil habitual de Brave y la extension analizada no se tocaron.
+No hay calculadora, historial, enriquecimiento remoto ni IA en este hito.
 
 Estado de avance:
 
 - [x] Hito 1: base instalable y permisos.
 - [x] Hito 2: extraccion y normalizacion.
-- [ ] Hito 3: vista rapida y navegacion; pendiente de indicacion para continuar.
+- [x] Hito 3: vista rapida y navegacion.
 - [ ] Hitos 4-8: no iniciados.
 
 ## Validacion y pendientes del plan
@@ -539,8 +626,9 @@ Estado de avance:
 - [x] Confirmar que el plan no introduce codigo de aplicacion.
 - [x] Obtener autorizacion antes de implementar.
 
-Decisiones pendientes: identidad/nombre definitivo y fuentes/presupuesto para
-hitos 6-7. Avanzar entre hitos requiere indicacion conforme al proceso guiado.
+Identidad visual acordada en DESIGN.md; el nombre MeliExtension sigue provisional.
+Decisiones pendientes: nombre definitivo y fuentes/presupuesto para hitos 6-7.
+El hito 4, calculadora de rentabilidad, espera indicacion conforme al proceso guiado.
 La autorizacion de implementacion no es permiso implicito para publicar ni para
 modificar la instalacion existente de Brave.
 

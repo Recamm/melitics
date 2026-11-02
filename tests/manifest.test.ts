@@ -13,6 +13,9 @@ const manifest = z.looseObject({
   host_permissions: z.array(z.string()),
   background: z.looseObject({ service_worker: z.string() }),
   content_security_policy: z.looseObject({ extension_pages: z.string() }),
+  action: z.strictObject({ default_title: z.string(), default_popup: z.string() }),
+  content_scripts: z.array(z.looseObject({ matches: z.array(z.string()), js: z.array(z.string()), run_at: z.string() })),
+  web_accessible_resources: z.array(z.strictObject({ resources: z.array(z.string()), use_dynamic_url: z.boolean(), matches: z.array(z.string()) })),
 }).parse(JSON.parse(readFileSync(resolve(outputDirectory, 'manifest.json'), 'utf8')));
 
 describe('production manifest', () => {
@@ -31,11 +34,13 @@ describe('production manifest', () => {
   });
 
   it('does not expose external messaging or copied extension integration', () => {
-    for (const field of ['externally_connectable', 'devtools_page', 'key', 'update_url', 'web_accessible_resources']) {
+    for (const field of ['externally_connectable', 'devtools_page', 'key', 'update_url']) {
       expect(manifest).not.toHaveProperty(field);
     }
-    expect(manifest).not.toHaveProperty('content_scripts');
-    expect(manifest).not.toHaveProperty('action');
+    expect(manifest.action).toEqual({ default_title: 'MeliExtension', default_popup: 'popup.html' });
+    expect(manifest.content_scripts).toEqual([{ matches: ['https://*.mercadolibre.com.ar/*'], run_at: 'document_idle', js: ['content-scripts/mercadolibre.js'] }]);
+    expect(manifest.web_accessible_resources).toEqual([{ resources: ['content-scripts/mercadolibre.css'], use_dynamic_url: true, matches: ['https://*.mercadolibre.com.ar/*'] }]);
+    expect(existsSync(resolve(outputDirectory, 'popup.html'))).toBe(true);
   });
 
   it('loads a bundled service worker that exists in the output', () => {
@@ -45,6 +50,6 @@ describe('production manifest', () => {
 
   it('forbids remote scripts and dynamic evaluation in the production CSP', () => {
     expect(manifest.content_security_policy.extension_pages)
-      .toBe("script-src 'self'; object-src 'none'");
+      .toBe("script-src 'self'; object-src 'none'; img-src 'self' https://mlstatic.com https://*.mlstatic.com; font-src 'self'; connect-src 'self'; base-uri 'none'");
   });
 });

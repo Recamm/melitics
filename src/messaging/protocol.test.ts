@@ -31,6 +31,34 @@ function setup() {
 }
 
 describe('message protocol', () => {
+  it('saves panel preferences only from a trusted extension page', async () => {
+    const save = vi.fn(async () => {});
+    const handle = createMessageHandler({ extensionId, initialize: async () => preferences, save });
+    const response = await handle({ ...request, operation: 'preferences.set', payload: { panelEnabled: false } }, extensionSender);
+    expect(response).toMatchObject({ ok: true, data: { schemaVersion: 1, panelEnabled: false } });
+    expect(save).toHaveBeenCalledWith({ schemaVersion: 1, panelEnabled: false });
+    expect(await handle({ ...request, operation: 'preferences.get' }, extensionSender))
+      .toMatchObject({ ok: true, data: { panelEnabled: false } });
+  });
+
+  it('forbids preference writes from a content script even on an allowed domain', async () => {
+    const save = vi.fn(async () => {});
+    const handle = createMessageHandler({ extensionId, initialize: async () => preferences, save });
+    expect(await handle({ ...request, operation: 'preferences.set', payload: { panelEnabled: false } }, marketplaceSender))
+      .toMatchObject({ ok: false, error: { code: 'forbidden' } });
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('preserves cached preferences if saving fails', async () => {
+    const handle = createMessageHandler({ extensionId, initialize: async () => preferences,
+      save: async () => { throw new Error('private-write-error'); } });
+    const response = await handle({ ...request, operation: 'preferences.set', payload: { panelEnabled: false } }, extensionSender);
+    expect(response).toMatchObject({ ok: false, error: { code: 'internal' } });
+    expect(JSON.stringify(response)).not.toContain('private-write-error');
+    expect(await handle({ ...request, operation: 'preferences.get' }, extensionSender))
+      .toMatchObject({ ok: true, data: { panelEnabled: true } });
+  });
+
   it('reports the implemented milestone without claiming unavailable features', async () => {
     const { handle } = setup();
     await expect(handle(request, extensionSender)).resolves.toEqual({
@@ -38,11 +66,11 @@ describe('message protocol', () => {
       requestId,
       ok: true,
       data: {
-        completedMilestone: 1,
+        completedMilestone: 3,
         mode: 'local',
         networkEnabled: false,
         capabilities: {
-          analysis: 'unavailable',
+          analysis: 'available',
           history: 'unavailable',
           assistant: 'disabled',
         },

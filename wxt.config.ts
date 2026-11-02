@@ -2,6 +2,7 @@ import { defineConfig } from 'wxt';
 
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
+  webExt: { disabled: true },
   manifestVersion: 3,
   manifest: {
     name: 'MeliExtension',
@@ -10,7 +11,7 @@ export default defineConfig({
     permissions: ['storage'],
     host_permissions: ['https://*.mercadolibre.com.ar/*'],
     content_security_policy: {
-      extension_pages: "script-src 'self'; object-src 'none'",
+      extension_pages: "script-src 'self'; object-src 'none'; img-src 'self' https://mlstatic.com https://*.mlstatic.com; font-src 'self'; connect-src 'self'; base-uri 'none'",
     },
   },
 });

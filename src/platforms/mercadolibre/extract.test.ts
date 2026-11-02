@@ -24,6 +24,16 @@ function supportedPage(document: Document, url: string) {
 }
 
 describe('public marketplace extraction', () => {
+  it('accepts only public product images from the marketplace CDN', () => {
+    const image = 'https://http2.mlstatic.com/D_NQ_NP_123-test.webp';
+    expect(supportedPage(structured({ '@type': 'Product', name: 'Actual', image: [image] }), listingUrl).snapshot)
+      .toMatchObject({ imageUrl: image });
+    for (const unsafe of ['https://attacker.test/pixel', 'http://http2.mlstatic.com/test', 'https://http2.mlstatic.com.attacker.test/test']) {
+      expect(supportedPage(structured({ '@type': 'Product', name: 'Actual', image: unsafe }), listingUrl).snapshot)
+        .toMatchObject({ imageUrl: null });
+    }
+  });
+
   it('extracts a listing using structured public data and field provenance', () => {
     const result = supportedPage(fixture('listing'), `${listingUrl}?csrf=discard-me#tracking`);
     expect(result.status).toBe('complete');

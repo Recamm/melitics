@@ -13,6 +13,9 @@ const mocks = vi.hoisted(() => ({
   addListener: vi.fn<(listener: MessageListener) => void>(),
   setAccessLevel: vi.fn<() => Promise<void>>(),
   get: vi.fn<() => Promise<Record<string, unknown>>>(),
+  set: vi.fn<() => Promise<void>>(),
+  query: vi.fn<() => Promise<{ id: number }[]>>(),
+  sendMessage: vi.fn<() => Promise<void>>(),
 }));
 
 vi.mock('wxt/browser', () => ({
@@ -22,8 +25,9 @@ vi.mock('wxt/browser', () => ({
       onMessage: { addListener: mocks.addListener },
     },
     storage: {
-      local: { setAccessLevel: mocks.setAccessLevel, get: mocks.get },
+      local: { setAccessLevel: mocks.setAccessLevel, get: mocks.get, set: mocks.set },
     },
+    tabs: { query: mocks.query, sendMessage: mocks.sendMessage },
   },
 }));
 
@@ -56,9 +60,23 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.setAccessLevel.mockResolvedValue(undefined);
   mocks.get.mockResolvedValue({});
+  mocks.set.mockResolvedValue(undefined);
+  mocks.query.mockResolvedValue([{ id: 7 }]);
+  mocks.sendMessage.mockResolvedValue(undefined);
 });
 
 describe('background lifecycle', () => {
+  it('persists preferences and notifies only tabs on the selected marketplace', async () => {
+    const listener = startWorker();
+    expect(await sendMessage(listener, { ...request, operation: 'preferences.set', payload: { panelEnabled: false } }))
+      .toMatchObject({ ok: true, data: { panelEnabled: false } });
+    expect(mocks.set).toHaveBeenCalledWith({ preferences: { schemaVersion: 1, panelEnabled: false } });
+    await vi.waitFor(() => expect(mocks.query).toHaveBeenCalledWith({ url: ['https://*.mercadolibre.com.ar/*'] }));
+    await vi.waitFor(() => expect(mocks.sendMessage).toHaveBeenCalledWith(7, {
+      type: 'preferences.changed', preferences: { schemaVersion: 1, panelEnabled: false },
+    }));
+  });
+
   it('registers synchronously and initializes storage before receiving messages', async () => {
     startWorker();
     expect(mocks.addListener).toHaveBeenCalledOnce();

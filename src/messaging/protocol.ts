@@ -5,16 +5,20 @@ import {
   PROTOCOL_VERSION,
   RUNTIME_STATUS,
   runtimeStatusSchema,
+  panelStateSchema,
   type ErrorCode,
   type Preferences,
 } from '../shared/contracts';
 
-export const requestSchema = z.strictObject({
+const requestBase = z.strictObject({
   version: z.literal(PROTOCOL_VERSION),
   requestId: z.uuid(),
-  operation: z.enum(['status.get', 'preferences.get']),
-  payload: z.strictObject({}),
 });
+
+export const requestSchema = z.discriminatedUnion('operation', [
+  requestBase.extend({ operation: z.enum(['status.get', 'preferences.get']), payload: z.strictObject({}) }),
+  requestBase.extend({ operation: z.literal('preferences.set'), payload: z.strictObject({ panelEnabled: z.boolean() }) }),
+]);
 
 export const responseSchema = z.discriminatedUnion('ok', [
   z.strictObject({
@@ -36,6 +40,18 @@ export const responseSchema = z.discriminatedUnion('ok', [
 
 export type MessageRequest = z.infer<typeof requestSchema>;
 export type MessageResponse = z.infer<typeof responseSchema>;
+
+export const panelRequestSchema = requestBase.extend({
+  operation: z.enum(['panel.get', 'panel.open', 'panel.refresh']),
+  payload: z.strictObject({}),
+});
+export type PanelOperation = z.infer<typeof panelRequestSchema>['operation'];
+export const panelResponseSchema = z.union([
+  z.strictObject({ version: z.literal(PROTOCOL_VERSION), requestId: z.uuid(), ok: z.literal(true), data: panelStateSchema }),
+  responseSchema.options[1],
+]);
+export const panelChangedSchema = z.strictObject({ type: z.literal('panel.changed'), state: panelStateSchema });
+export const preferencesChangedSchema = z.strictObject({ type: z.literal('preferences.changed'), preferences: preferencesSchema });
 
 const senderSchema = z.looseObject({
   id: z.string(),
@@ -83,8 +99,10 @@ export function errorResponse(
 export function createMessageHandler(options: {
   extensionId: string;
   initialize: () => Promise<Preferences>;
+  save?: (preferences: Preferences) => Promise<void>;
 }) {
   let preferences: Promise<Preferences> | undefined;
+  let writes: Promise<void> = Promise.resolve();
 
   function loadPreferences(): Promise<Preferences> {
     preferences ??= Promise.resolve()
@@ -105,9 +123,27 @@ export function createMessageHandler(options: {
     const parsed = requestSchema.safeParse(message);
     if (!parsed.success) return errorResponse('invalid-input', 'Mensaje no valido.');
     const request = parsed.data;
+    if (request.operation === 'preferences.set') {
+      const context = senderSchema.parse(sender);
+      if (new URL(context.url).protocol !== 'chrome-extension:') {
+        return errorResponse('forbidden', 'Operacion no autorizada.', request.requestId);
+      }
+    }
 
     try {
       const state = await loadPreferences();
+      if (request.operation === 'preferences.set') {
+        const save = options.save;
+        if (!save) return errorResponse('unsupported', 'Preferencia no disponible.', request.requestId);
+        const next: Preferences = { schemaVersion: 1, panelEnabled: request.payload.panelEnabled };
+        const operation = writes.then(async () => {
+          await save(next);
+          preferences = Promise.resolve(next);
+        });
+        writes = operation.catch(() => undefined);
+        await operation;
+        return { version: PROTOCOL_VERSION, requestId: request.requestId, ok: true, data: next };
+      }
       return {
         version: PROTOCOL_VERSION,
         requestId: request.requestId,

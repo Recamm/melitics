@@ -1,4 +1,4 @@
-import { publicPageSnapshotSchema, type ExtractionResult, type PublicPageSnapshot } from '../../shared/contracts';
+import { publicImageUrlSchema, publicPageSnapshotSchema, type ExtractionResult, type PublicPageSnapshot } from '../../shared/contracts';
 import { parseMoney } from '../../shared/money';
 import { ARGENTINA, cleanUrl, marketplaceUrl, normalizeId, pageIdentity } from './markets';
 
@@ -84,6 +84,20 @@ function publicSellerUrl(value: unknown, base: string): string | null {
   return url && /^\/(?:perfil|tienda)\/[^/]+\/?$/i.test(url.pathname) ? cleanUrl(url) : null;
 }
 
+function publicImage(value: unknown): string | null {
+  const candidate = Array.isArray(value) ? value[0] : node(value)?.url ?? value;
+  if (typeof candidate !== 'string') return null;
+  try {
+    const url = new URL(candidate);
+    url.search = '';
+    url.hash = '';
+    const parsed = publicImageUrlSchema.safeParse(url.href);
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
 export function extractPublicPage(document: Document, inputUrl: string): ExtractionResult {
   const url = marketplaceUrl(inputUrl);
   if (!url) return { status: 'unsupported', reason: 'unsupported-origin' };
@@ -123,6 +137,12 @@ export function extractPublicPage(document: Document, inputUrl: string): Extract
   });
   const offer = selectedOffers.length === 1 ? selectedOffers[0] : offers.length === 1 ? offers[0] : undefined;
   const meta = (selector: string): string | null => text(document.querySelector(selector)?.getAttribute('content'));
+  let imageUrl = publicImage(product?.image);
+  if (imageUrl) mark('imageUrl', 'json-ld');
+  else {
+    imageUrl = publicImage(meta('meta[property="og:image"]'));
+    if (imageUrl) mark('imageUrl', 'meta');
+  }
   let title = text(product?.name);
   if (title) mark('title', 'json-ld');
   else {
@@ -177,7 +197,7 @@ export function extractPublicPage(document: Document, inputUrl: string): Extract
 
   const snapshot = publicPageSnapshotSchema.parse({
     siteId: ARGENTINA.siteId, locale: ARGENTINA.locale,
-    canonicalUrl, ...identity, title, price,
+    canonicalUrl, ...identity, title, price, imageUrl,
     seller: sellerName || sellerUrl || sellerId ? { id: sellerId, name: sellerName, url: sellerUrl } : null,
     observedAt: new Date().toISOString(), extractorRevision: 'public-v1', provenance,
   });
