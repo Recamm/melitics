@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "wxt",
     "prepare:extension": "wxt prepare",
+    "prepare:delivery": "node scripts/prepare-delivery.mjs",
     "build": "wxt build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

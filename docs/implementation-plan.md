@@ -1,9 +1,9 @@
 # Plan de implementacion: extension propia para MercadoLibre
 
 Fecha: 2026-11-01.
-Estado: hitos 1-6 verificados; hito 7 preparado y verificado en modo desactivado.
+Estado: hitos 1-6 verificados localmente; hito 7 preparado desactivado; hito 8 entregado localmente, sitio real no verificado.
 Implementacion de la app: autorizada por el usuario para comenzar este plan.
-Proceso guiado: esperar indicacion antes de continuar con el hito 8.
+Proceso guiado: entrega local autorizada y completada; fuentes remotas, IA, publicacion o despliegue requieren otra autorizacion.
 
 ## Objetivo y restricciones
 
@@ -461,7 +461,8 @@ Resultado del hito 7, alcance desactivado acordado:
 	cancelacion/errores/limites de solicitudes remotas. Requieren proveedor,
 	presupuesto y politica de envio aprobados, credenciales fuera del chat y pruebas
 	reales. Las pruebas locales no acreditan calidad ni seguridad de un modelo de IA.
-- No se inicio entrega/publicacion ni el hito 8. Esperar indicacion para continuar.
+- Al cerrar el hito 7 no se inicio entrega/publicacion. El usuario autorizo
+	posteriormente el hito 8; su evidencia y limites se registran mas abajo.
 
 ### Hito 8: validacion y entrega
 
@@ -902,7 +903,93 @@ Estado de avance:
 - [x] Hito 3: vista rapida y navegacion.
 - [x] Hito 4: calculadora de rentabilidad manual.
 - [x] Hito 5: seguimiento e historial propio.
-- [ ] Hitos 6-8: no iniciados.
+- [x] Hito 6: comparacion local, contactos y contratos; fuentes remotas no disponibles.
+- [x] Hito 7: preparacion desactivada, sin proveedor ni envios, presupuesto USD 0.
+- [x] Hito 8: validacion y entrega local con limites documentados.
+- [ ] Compatibilidad con publicaciones reales: prueba autorizada bloqueada por HTTP 403.
+
+## Hito 8: entrega local
+
+El usuario autorizo continuar y probar paginas publicas de MercadoLibre Argentina
+en un perfil temporal sin sesion y en modo solo lectura. No autorizo compras,
+ventas, uso de credenciales, fuentes privadas, publicacion ni despliegue.
+
+Documentacion y empaquetado:
+
+- README.md contiene requisitos, carga descomprimida, desarrollo, pruebas,
+	empaquetado, actualizacion conservando ruta/ID y recuperacion de fallos.
+- PRIVACY.md describe campos publicos, storage/IndexedDB, capturas/contactos
+	manuales, vencimiento sin borrado automatico, exportaciones propias,
+	portapapeles manual, imagenes HTTPS de mlstatic y borrado confirmado.
+- tests/extension.spec.ts esta incluido realmente en el proyecto unit de Vitest;
+	no es un spec sin runner ni depende de agregar otra plataforma de pruebas.
+- npm run prepare:delivery copia documentos y avisos al build de produccion.
+	Verifica version contra el lockfile, registro npm, licencia declarada y textos
+	originales. Incluye conservadoramente 21 paquetes de runtime/helpers.
+- Los avisos ausentes de WXT y webext-core se preservan desde los commits
+	ee7c2cd3afc74f55f6c060dbd95c6ac930596325 y
+	49c570d155cf5a57b7a15abded01ed4071f17f95, respectivamente. No se asigno
+	licencia propia ni se reutilizaron recursos de la extension original.
+- RED observado: documentos/avisos ausentes en el build y helpers clasificados
+	como desarrollo sin aviso. GREEN tras preparar la entrega y completar avisos.
+
+Gates y evidencia:
+
+- Typecheck, build de produccion y 259 tests en 22 archivos pasan.
+- npm audit completo, incluido desarrollo: 0 vulnerabilidades conocidas. Las
+	fuentes del lockfile y versiones instaladas de los paquetes incluidos se
+	comprobaron. Esto no es una certificacion absoluta de la cadena de suministro.
+- Manifest MV3, Chrome minimo 120, solo storage y el host publico MLA acordado.
+	CSP de scripts/conexiones propios y CDN de imagenes permitido, sin mensajes
+	externos abiertos. El spec excluye sourcemaps, fuentes/tests, HMR, localhost,
+	fixtures reconocibles y patrones de credenciales en los scripts/HTML.
+	La busqueda dirigida del codigo propio no encontro lectura de cookies,
+	sincronizacion, eval, renderizado HTML inseguro ni transporte IA. No es una
+	auditoria exhaustiva de todos los secretos o de todo el codigo de dependencias.
+- Siete modos nativos pasan sobre el build final en Brave, cada uno en un perfil
+	nuevo: general, historial, rentabilidad, Mercado, asistencia, navegacion y
+	carreras del popup. No hubo errores de pagina en esos flujos sinteticos.
+- Historial prueba tabs concurrentes, reinicio real de Brave/worker, persistencia
+	y lectura offline, JSON/CSV propios, importacion invalidada/duplicados,
+	confirmaciones, Escape/foco y SVG del grafico. Mercado prueba contactos
+	manuales, dos vendedores y aislamiento SPA; asistencia sigue bloqueada.
+- Desktop/narrow, teclado y zoom real de 200% verificados. El caso de 500
+	caracteres sin espacios encontro un desborde de la etiqueta Publicacion:
+	RED nativo observado, corregido permitiendo partir tambien la etiqueta,
+	GREEN en el mismo flujo recompilado. Capturas revisadas visualmente.
+- Runtime del build: 1.64 MB; background 120.78 kB, content 403.73 kB,
+	compartido 344.11 kB, popup 42.58 kB, options 31.18 kB y HistoryChart
+	501.52 kB. El chart registra cero solicitudes desde panel/popup y una
+	solicitud diferida al abrir la gestion del historial. Se mantienen las
+	advertencias de chunk mayor a 500 kB e import dinamico inefectivo del cliente.
+
+Prueba publica y limites:
+
+- node tests/browser-smoke.mjs --public-pages-only usa otro perfil nuevo,
+	sin fixtures ni DNS simulado, y bloquea XHR/APIs/rutas privadas y terceros
+	no necesarios. No extrae cookies ni inicia sesion.
+- https://listado.mercadolibre.com.ar/camaras-fotograficas devolvio HTTP 403.
+	Publicaciones accesibles encontradas: 0. Publicaciones verificadas: 0.
+	Se detuvo la comprobacion; no se intento eludir el bloqueo.
+- Capturas e informe public-pages.json quedan en
+	C:/Users/camil/AppData/Local/Temp/meli-delivery-results-c0e6afac-cf47-4e0c-975a-56acd8fa0e0c,
+	fuera del repositorio/ZIP. Los perfiles se eliminaron tras cada ejecucion.
+- No se certifican selectores actuales del sitio real, Google Chrome ejecutado
+	separadamente, Android, Safari, ofertas remotas, Buybox remoto o un modelo IA.
+
+Entrega:
+
+- ZIP local: .output/MeliExtension-0.1.0.zip, alrededor de 0.65 MB comprimido.
+	Manifest en la raiz al descomprimir, 18 archivos: runtime y documentacion/avisos.
+	Se verifico inventario, rutas y SHA-256 de cada entrada contra el build.
+- Checksum SHA-256 de la entrega: .output/MeliExtension-0.1.0.zip.sha256,
+	fuera del ZIP para evitar dependencia circular. README documenta como
+	reconstruirlo; solo se incluye el bundle de produccion preparado.
+- Se conserva la IA desactivada, USD 0 y ningun envio. Catalogo/Buybox remoto
+	sigue sin fuente autorizada; el runtime completedMilestone=7 sigue describiendo
+	el ultimo hito funcional, no una certificacion real del sitio.
+- No se publicaron paquetes, crearon commits/ramas, desplegaron servicios ni
+	modificaron datos del perfil habitual o la extension original.
 
 ## Validacion y pendientes del plan
 
@@ -915,8 +1002,9 @@ Estado de avance:
 - [x] Obtener autorizacion antes de implementar.
 
 Identidad visual acordada en DESIGN.md; el nombre MeliExtension sigue provisional.
-Decisiones pendientes: nombre definitivo y fuentes/presupuesto para hitos 6-7.
-El hito 6, catalogo y Buybox, espera indicacion conforme al proceso guiado.
+Decisiones pendientes: nombre/licencia propios y eventual fuente autorizada de
+catalogo/Buybox. IA: decidido sin proveedor, presupuesto USD 0 y ningun envio;
+no se activara sin otra autorizacion. Compatibilidad real pendiente por HTTP 403.
 La autorizacion de implementacion no es permiso implicito para publicar ni para
 modificar la instalacion existente de Brave.
 

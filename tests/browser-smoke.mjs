@@ -15,6 +15,7 @@ const feesOnly = process.argv.includes('--fees-only');
 const historyOnly = process.argv.includes('--history-only');
 const marketOnly = process.argv.includes('--market-only');
 const assistantOnly = process.argv.includes('--assistant-only');
+const publicPagesOnly = process.argv.includes('--public-pages-only');
 await mkdir(results, { recursive: true });
 let context;
 
@@ -27,16 +28,92 @@ function launchBrowser() {
     args: [
       `--disable-extensions-except=${bundle}`, `--load-extension=${bundle}`,
       '--no-first-run', '--disable-component-update',
-      '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1',
+      ...(publicPagesOnly ? [] : ['--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1']),
     ],
     timeout: 15000,
   });
 }
 
+async function checkPublicPages(browserContext) {
+  let blockedRequests = 0;
+  await browserContext.route('**/*', route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (!/^https?:$/.test(url.protocol)) return route.continue();
+    const publicHost = ['mercadolibre.com.ar', 'mlstatic.com', 'meliassets.com'].some(host => url.hostname === host || url.hostname.endsWith(`.${host}`));
+    const publicResource = ['document', 'script', 'stylesheet', 'image', 'font'].includes(request.resourceType());
+    const privatePath = /\/(?:auth|login|registration|my-account|myaccount|api|p\/api)(?:\/|$)/i.test(url.pathname);
+    if (url.protocol !== 'https:' || !publicHost || !publicResource || privatePath) {
+      blockedRequests += 1;
+      return route.abort('blockedbyclient');
+    }
+    return route.continue();
+  });
+  const worker = browserContext.serviceWorkers()[0] ?? await browserContext.waitForEvent('serviceworker', { timeout: 15000 });
+  const page = await browserContext.newPage();
+  const report = { phase: 'public-pages', synthetic: false, temporaryProfile: true, readOnly: true, pages: [] };
+  const searchUrl = 'https://listado.mercadolibre.com.ar/camaras-fotograficas';
+  try {
+    const response = await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.screenshot({ path: path.join(results, 'public-search.png') });
+    const urls = await page.locator('a[href]').evaluateAll(elements => {
+      const candidates = elements.flatMap(element => {
+        try {
+          const url = new URL(element.href);
+          if (url.protocol !== 'https:' || !(url.hostname === 'mercadolibre.com.ar' || url.hostname.endsWith('.mercadolibre.com.ar'))) return [];
+          if (!/^(?:\/MLA-[1-9]\d{4,19}|\/p\/MLA[1-9]\d{4,19})(?:[-/]|$)/.test(url.pathname)) return [];
+          url.search = ''; url.hash = '';
+          return [url.href];
+        } catch { return []; }
+      });
+      return [...new Set(candidates)].slice(0, 2);
+    });
+    report.search = { url: searchUrl, httpStatus: response?.status() ?? null, publicationsFound: urls.length };
+    for (const [index, url] of urls.entries()) {
+      const observation = { url, verified: false };
+      try {
+        const publication = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        observation.httpStatus = publication?.status() ?? null;
+        const title = await page.locator('.ui-pdp-title').first().innerText({ timeout: 10000 });
+        const panel = page.locator('meli-extension-panel');
+        await panel.getByRole('heading', { name: title.trim(), exact: true }).waitFor({ timeout: 10000 });
+        const response = await worker.evaluate(async targetUrl => {
+          const tabs = await chrome.tabs.query({ url: 'https://*.mercadolibre.com.ar/*' });
+          const tab = tabs.find(candidate => candidate.url === targetUrl);
+          if (!tab?.id) return null;
+          return chrome.tabs.sendMessage(tab.id, { version: 1, requestId: crypto.randomUUID(), operation: 'panel.get', payload: {} });
+        }, page.url());
+        const snapshot = response?.ok ? response.data.snapshot : null;
+        observation.titleMatches = snapshot?.title === title.trim();
+        observation.pricePresent = snapshot?.price !== null && snapshot?.price !== undefined;
+        observation.verified = observation.httpStatus === 200 && observation.titleMatches && observation.pricePresent;
+        if (!observation.verified) observation.reason = 'incomplete-public-capture';
+      } catch {
+        observation.reason = 'public-page-blocked-or-incompatible';
+      }
+      await page.screenshot({ path: path.join(results, `public-publication-${index + 1}.png`) });
+      report.pages.push(observation);
+    }
+    if (!urls.length) report.reason = 'no-accessible-public-publications';
+  } catch {
+    report.reason = 'public-search-unavailable';
+  }
+  report.blockedRequests = blockedRequests;
+  report.verifiedPublications = report.pages.filter(page => page.verified).length;
+  report.screenshots = results;
+  await writeFile(path.join(results, 'public-pages.json'), JSON.stringify(report, null, 2), 'utf8');
+  console.log(JSON.stringify(report));
+}
+
 try {
   context = await launchBrowser();
+  if (publicPagesOnly) {
+    await checkPublicPages(context);
+  } else {
   const errors = [];
   const requestHosts = [];
+  const chartRequests = [];
+  context.on('request', request => { if (request.url().includes('/chunks/HistoryChart-')) chartRequests.push(request.url()); });
   if (assistantOnly) context.on('request', request => { if (/^https?:/.test(request.url())) requestHosts.push(new URL(request.url()).hostname); });
   context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
   const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker', { timeout: 15000 });
@@ -191,6 +268,7 @@ try {
     }
     await Promise.all([panel, secondPanel].map(surface => surface.getByRole('button', { name: 'Guardar captura', exact: true }).click()));
     for (const surface of [panel, secondPanel]) await surface.getByText('Captura guardada.', { exact: true }).waitFor();
+    assert.equal(chartRequests.length, 0, 'History in the content panel must not load the chart');
     const managementEvent = context.waitForEvent('page');
     await panel.getByRole('button', { name: 'Gr\u00e1fico y archivos', exact: true }).click();
     const management = await managementEvent;
@@ -220,6 +298,7 @@ try {
     await management.getByRole('button', { name: 'Confirmar importaci\u00f3n', exact: true }).click();
     await management.getByText('6 / 50000 capturas', { exact: true }).waitFor();
     await management.locator('.history-chart svg').waitFor();
+    assert.equal(chartRequests.length, 1, 'The own history page loads one deferred chart chunk');
     assert.equal(await management.locator('.history-chart svg').evaluate(svg => [...svg.querySelectorAll('path')].some(path => path.getAttribute('stroke') === '#12675f' && path.getAttribute('d')?.length > 4)), true);
     for (const width of [1280, 320]) {
       await management.setViewportSize({ width, height: 900 });
@@ -476,6 +555,19 @@ try {
     await panel.getByText('Datos parciales', { exact: true }).waitFor();
     await page.screenshot({ path: path.join(results, 'spa-partial.png') });
 
+    const longTitle = 'W'.repeat(500);
+    await page.locator('.ui-pdp-title').evaluate((el, title) => { el.textContent = title; }, longTitle);
+    await panel.getByRole('heading', { name: longTitle, exact: true }).waitFor();
+    await page.setViewportSize({ width: 320, height: 900 });
+    await worker.evaluate(tabId => chrome.tabs.setZoom(tabId, 2), tabId);
+    assert.equal(await panel.locator('.app-scroll').evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    assert.equal(await panel.getByRole('heading', { name: longTitle, exact: true }).evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    await page.screenshot({ path: path.join(results, 'long-title-500-zoom-200.png') });
+    await worker.evaluate(tabId => chrome.tabs.setZoom(tabId, 1), tabId);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.locator('.ui-pdp-title').evaluate(el => { el.textContent = 'Publicacion B revisada'; });
+    await panel.getByRole('heading', { name: 'Publicacion B revisada', exact: true }).waitFor();
+
     await context.route('https://mlstatic.com/fixture.png', route => {
       assert.equal(route.request().headers()['referer'], undefined);
       return route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jQ1sAAAAASUVORK5CYII=', 'base64') });
@@ -507,8 +599,10 @@ try {
     assert.equal(await panel.count(), 0);
     console.log(JSON.stringify({ phase: 'integration', shadowDOM: true, keyboard: true, popup: true, preferences: true, spa: true, zoom200: true, syntheticImage: true, unsupported: true, screenshots: results }));
   }
+  if (!historyOnly) assert.equal(chartRequests.length, 0, 'Initial views must not load the history chart');
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ phase: 'complete', pageErrors: errors }));
+  console.log(JSON.stringify({ phase: 'complete', pageErrors: errors, deferredChartRequests: chartRequests.length }));
+  }
 } finally {
   if (context) await context.close();
   await rm(profile, { recursive: true, force: true });
