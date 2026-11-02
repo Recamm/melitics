@@ -121,7 +121,7 @@ describe('message protocol', () => {
       requestId,
       ok: true,
       data: {
-        completedMilestone: 6,
+        completedMilestone: 7,
         mode: 'local',
         networkEnabled: false,
         capabilities: {

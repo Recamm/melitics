@@ -16,6 +16,15 @@ function state(name = 'listing'): PanelState {
 }
 
 describe('public product panel', () => {
+  it('exposes disabled assistance inside Mercado without adding a fifth tab', async () => {
+    const user = userEvent.setup(); render(<App state={state()} mode="panel" onRefresh={vi.fn()} />);
+    await user.click(screen.getByRole('tab', { name: 'Mercado' }));
+    await user.click(screen.getByText('Asistencia de IA', { selector: 'summary' }));
+    expect(screen.getByText('Asistencia desactivada')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Generar propuesta' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getAllByRole('tab')).toHaveLength(4);
+  });
+
   it('includes a fourth accessible market tab with keyboard wraparound', async () => {
     const user = userEvent.setup();
     render(<App state={state()} mode="panel" onRefresh={vi.fn()} />);

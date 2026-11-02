@@ -98,6 +98,15 @@
 .offers-table small, .offers-table a { display: block; padding-top: 4px; font-weight: 400; }
 .saved-contact { border-top: 1px solid var(--line); padding-top: 10px; }
 .contact-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.assistant-consent { margin-top: 14px; overflow-wrap: anywhere; }
+.assistant-generate { margin-top: 10px; max-width: 100%; overflow-wrap: anywhere; }
+.assistant-proposal { padding: 12px 0; border-top: 1px solid var(--line); }
+.assistant-proposal h3 { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.assistant-diff { display: grid; gap: 12px; font-size: 12px; }
+.assistant-diff dt { color: var(--muted); margin-bottom: 4px; }
+.assistant-diff dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.assistant-diff del { color: var(--danger); }
+.assistant-diff ins { color: var(--accent); background: var(--surface); }
 .market-section .history-actions { flex-wrap: wrap; }
 .market-section .history-actions > * { max-width: 100%; min-width: 0; overflow-wrap: anywhere; }
 .market-section .history-table-wrap { max-width: 100%; overflow-x: auto; }

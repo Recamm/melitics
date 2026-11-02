@@ -62,5 +62,17 @@ provisional MeliExtension, sin marcas ni recursos de MercadoToolkit.
 - Limite 1000 contactos, conteo en gestion y aviso de que JSON/CSV v1 solo contienen
   historial. Borrado global informa tambien los contactos que se eliminaran.
 
+- Asistencia de IA dentro de un desplegable de Mercado, sin agregar pestanas ni
+  tarjetas. Estado desactivado y proveedor/presupuesto/alojamiento/envios explicitos.
+  Decision actual: sin proveedor, USD 0, solo local y ningun envio. Consentimiento
+  y generacion deshabilitados; tarea/tono no activan una conexion.
+- Revisor preparado: diferencias por campo, original desconocido como No capturado,
+  texto literal sin HTML ejecutable, fuentes y afirmaciones no verificadas. Copia
+  manual con icono/nombre accesible, confirmacion o error sin perder el contenido.
+  No hay propuestas ficticias en la app ni publicacion automatica. El revisor se
+  comprobo con fixtures unitarios; la generacion real sigue pendiente de autorizacion.
+- A 200%, Autorizar envio es la etiqueta visual breve del consentimiento, conservando
+  su nombre accesible. Panel y popup mantienen controles legibles sin desbordes.
+
 La identidad definitiva y las fuentes remotas requieren su aprobacion.
 Las pruebas con fixtures no certifican publicaciones reales.

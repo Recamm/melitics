@@ -6,6 +6,7 @@ import { FeesView } from '../features/fees/FeesView';
 import { HistoryView } from '../features/history/HistoryView';
 import { OffersView } from '../features/catalog/OffersView';
 import { SellerView } from '../features/sellers/SellerView';
+import { AssistantView } from '../features/assistant/AssistantView';
 
 export type AppProps = {
   state: PanelState;
@@ -94,7 +95,7 @@ export function App(props: AppProps) {
         {view === 'history' ? <HistoryView key={snapshot?.listingId ?? snapshot?.productId ?? 'none'} snapshot={snapshot} disabled={state.stale || state.status !== 'ready'} {...(props.onManage ? { onManage: props.onManage } : {})} /> : null}
       </div>
       <div id={`${titleId}-market`} role="tabpanel" aria-labelledby={`${titleId}-market-tab`} hidden={view !== 'market'}>
-        {view === 'market' ? <><OffersView key={feeIdentity} snapshot={snapshot} disabled={state.stale || state.status !== 'ready'} /><SellerView key={`${feeIdentity}:${snapshot?.seller?.id}`} snapshot={snapshot} disabled={state.stale || state.status !== 'ready'} /></> : null}
+        {view === 'market' ? <><OffersView key={feeIdentity} snapshot={snapshot} disabled={state.stale || state.status !== 'ready'} /><SellerView key={`${feeIdentity}:${snapshot?.seller?.id}`} snapshot={snapshot} disabled={state.stale || state.status !== 'ready'} /><details className="provenance assistant-details" key={`assistant:${feeIdentity}`}><summary>Asistencia de IA</summary><AssistantView snapshot={snapshot} disabled={state.stale || state.status !== 'ready'} /></details></> : null}
       </div>
     </div>
     {mode === 'popup' ? <footer className="popup-controls"><label className="preference"><input type="checkbox" name="panelEnabled" checked={props.preferences?.panelEnabled ?? false} disabled={!props.preferences || !props.onToggle} onChange={(event) => props.onToggle?.(event.currentTarget.checked)} />Panel en publicaciones</label><button className="primary-button" onClick={props.onOpen} disabled={!snapshot || !props.onOpen}><PanelRightOpen size={17} aria-hidden="true" />Abrir panel</button></footer> : null}

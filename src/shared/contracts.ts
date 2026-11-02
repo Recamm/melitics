@@ -272,7 +272,7 @@ export const DEFAULT_PREFERENCES: Readonly<Preferences> = {
 };
 
 export const runtimeStatusSchema = z.strictObject({
-  completedMilestone: z.literal(6),
+  completedMilestone: z.literal(7),
   mode: z.literal('local'),
   networkEnabled: z.literal(false),
   capabilities: z.strictObject({
@@ -288,7 +288,7 @@ export const runtimeStatusSchema = z.strictObject({
 });
 
 export const RUNTIME_STATUS: z.infer<typeof runtimeStatusSchema> = {
-  completedMilestone: 6,
+  completedMilestone: 7,
   mode: 'local',
   networkEnabled: false,
   capabilities: {

@@ -1,9 +1,9 @@
 # Plan de implementacion: extension propia para MercadoLibre
 
 Fecha: 2026-11-01.
-Estado: analisis estatico completado; hitos 1-6 implementados y verificados localmente.
+Estado: hitos 1-6 verificados; hito 7 preparado y verificado en modo desactivado.
 Implementacion de la app: autorizada por el usuario para comenzar este plan.
-Proceso guiado: esperar indicacion antes de continuar con el hito 7.
+Proceso guiado: esperar indicacion antes de continuar con el hito 8.
 
 ## Objetivo y restricciones
 
@@ -419,6 +419,49 @@ y, solo si se autoriza, `services/assistant/` con su configuracion y pruebas.
 
 Comprobacion: pruebas de DTO/cliente/backend y prueba real solo con credenciales
 aportadas fuera del chat y presupuesto aprobado. No basta un mock para certificar IA.
+
+Resultado del hito 7, alcance desactivado acordado:
+
+- Decisiones expresas del usuario: sin proveedor, USD 0, solo local sin desplegar,
+	ningun envio de datos. Se preparo la integracion desactivada, no un servicio de IA.
+	No se creo backend, SDK, credenciales, secretos, endpoint ni adapter de red.
+- DTO estricto y versionado: UUID, tarea titulo/descripcion/atributos, preferencias
+	acotadas y producto con IDs, titulo, URL publica limpia y fecha UTC. Proyeccion
+	explicita sin vendedor, precio, imagen ni procedencia completa; rechazo de HTML
+	completo, cookies, CSRF, comprador, tokens y claves en todos los niveles del DTO.
+- Cliente valida solicitudes y consentimiento, rechaza AbortSignal ya cancelado
+	y devuelve disabled/no-provider/proposal null para ambos valores de consentimiento.
+	No tiene transporte ni parametro para habilitarlo; fetch nunca se invoca.
+- Propuestas preparadas como salida estructurada: tarea/UUID vinculados, titulo
+	hasta 500 caracteres, descripcion hasta 5000, hasta 40 atributos con nombres
+	unicos y valores hasta 500. Solo referencia a la publicacion de la solicitud;
+	toda afirmacion sigue no verificada incluso si incluye esa referencia.
+- Vista dentro de un desplegable en Mercado, manteniendo cuatro pestanas. Proveedor,
+	presupuesto local y datos enviados visibles; consentimiento y generacion bloqueados.
+	Tarea/tono no habilitan solicitudes. La app no produce ni muestra propuestas simuladas.
+- Revisor local preparado y probado con fixtures unitarios para las tres tareas:
+	diferencias Actual/Propuesta, originales no capturados explicitamente desconocidos,
+	HTML renderizado como texto, fuentes no verificadas y copia solo por clic manual.
+	Error de portapapeles conserva la propuesta sin reintento automatico; cambio de
+	publicacion, instante o titulo descarta la propuesta y respuestas tardias de copia.
+	Sin publicacion automatica ni generacion de contactos o perfiles del vendedor.
+- RED/GREEN del DTO, cliente, vista y estado; 254 pruebas en 21 archivos pasaron,
+	typecheck y build de produccion, npm audit --omit=dev sin vulnerabilidades.
+	Permisos y CSP sin cambios, sin dependencias nuevas del producto; assistant
+	disabled y networkEnabled false. Bundle final 1.64 MB, con los avisos previos
+	del grafico diferido de 501.52 kB y el import dinamico de client sin separacion.
+- Brave con perfiles temporales y bundle real: --assistant-only comprobo panel,
+	popup, tres tareas, consentimiento/generacion bloqueados, ausencia de propuestas
+	y solicitudes a proveedores, 320 px y zoom real 200%. --market-only confirmo
+	persistencia y aislamiento entre vendedores, navegacion, foco y confirmaciones.
+	Sin errores de pagina. Capturas revisadas en TEMP:
+	meli-assistant-results-1d403075-02c1-4b7b-9de9-4c98256ea7b2.
+- Pendiente y no certificado: generacion real, backend autenticado, SDK oficial,
+	cuotas por usuario, tratamiento de instrucciones maliciosas por un modelo y
+	cancelacion/errores/limites de solicitudes remotas. Requieren proveedor,
+	presupuesto y politica de envio aprobados, credenciales fuera del chat y pruebas
+	reales. Las pruebas locales no acreditan calidad ni seguridad de un modelo de IA.
+- No se inicio entrega/publicacion ni el hito 8. Esperar indicacion para continuar.
 
 ### Hito 8: validacion y entrega
 

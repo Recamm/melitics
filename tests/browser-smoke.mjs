@@ -14,6 +14,7 @@ const popupRacesOnly = process.argv.includes('--popup-races-only');
 const feesOnly = process.argv.includes('--fees-only');
 const historyOnly = process.argv.includes('--history-only');
 const marketOnly = process.argv.includes('--market-only');
+const assistantOnly = process.argv.includes('--assistant-only');
 await mkdir(results, { recursive: true });
 let context;
 
@@ -35,11 +36,13 @@ function launchBrowser() {
 try {
   context = await launchBrowser();
   const errors = [];
+  const requestHosts = [];
+  if (assistantOnly) context.on('request', request => { if (/^https?:/.test(request.url())) requestHosts.push(new URL(request.url()).hostname); });
   context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
   const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker', { timeout: 15000 });
   const extensionId = new URL(worker.url()).host;
 
-  if (!navigationOnly && !popupRacesOnly && !feesOnly && !historyOnly && !marketOnly) {
+  if (!navigationOnly && !popupRacesOnly && !feesOnly && !historyOnly && !marketOnly && !assistantOnly) {
     const preview = await context.newPage();
     for (const [state, text] of [
       ['ready', 'Captura actual'], ['partial', 'Datos parciales'], ['loading', 'Actualizando'],
@@ -75,7 +78,55 @@ try {
     version: 1, requestId: crypto.randomUUID(), operation, payload: {},
   }), { tabId, operation });
 
-  if (marketOnly) {
+  if (assistantOnly) {
+    async function openAssistance(surface) {
+      await surface.getByRole('tab', { name: 'Mercado', exact: true }).click();
+      await surface.locator('.assistant-details > summary').click();
+      const assistance = surface.getByRole('region', { name: 'Asistencia de IA', exact: true });
+      await assistance.getByText('Asistencia desactivada', { exact: true }).waitFor();
+      assert.equal(await assistance.getByText('USD 0', { exact: true }).count(), 1);
+      assert.equal(await assistance.getByText('Ninguno', { exact: true }).count(), 1);
+      const consent = assistance.getByRole('checkbox', { name: 'Consentimiento de env\u00edo', exact: true });
+      assert.equal(await consent.isDisabled(), true); assert.equal(await consent.isChecked(), false);
+      for (const task of ['title', 'description', 'attributes']) {
+        await assistance.getByLabel('Tarea de asistencia', { exact: true }).selectOption(task);
+        assert.equal(await assistance.getByRole('button', { name: 'Generar propuesta', exact: true }).isDisabled(), true);
+      }
+      assert.equal(await assistance.getByRole('button', { name: /Copiar/ }).count(), 0);
+      return assistance;
+    }
+    const assistance = await openAssistance(panel);
+    for (const width of [1280, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      await assistance.getByRole('heading', { name: 'Asistencia de IA', exact: true }).scrollIntoViewIfNeeded();
+      assert.equal(await panel.locator('.app-scroll').evaluate(el => el.scrollWidth <= el.clientWidth), true);
+      await page.screenshot({ path: path.join(results, `assistant-panel-${width}.png`) });
+    }
+    await worker.evaluate(tabId => chrome.tabs.setZoom(tabId, 2), tabId);
+    await assistance.getByRole('heading', { name: 'Asistencia de IA', exact: true }).scrollIntoViewIfNeeded();
+    assert.equal(await panel.locator('.app-scroll').evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    assert.equal(await panel.locator('.app-scroll').evaluate(el => el.getBoundingClientRect().height >= 120), true);
+    await page.screenshot({ path: path.join(results, 'assistant-panel-zoom-200.png') });
+    await assistance.getByRole('button', { name: 'Generar propuesta', exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: path.join(results, 'assistant-controls-zoom-200.png') });
+    await worker.evaluate(tabId => chrome.tabs.setZoom(tabId, 1), tabId); await page.setViewportSize({ width: 1280, height: 900 });
+    const popup = await context.newPage(); await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    await page.bringToFront(); await popup.reload();
+    await popup.getByRole('heading', { name: 'Camara de prueba', exact: true }).waitFor();
+    const popupAssistance = await openAssistance(popup);
+    await popup.setViewportSize({ width: 380, height: 700 });
+    await popupAssistance.getByRole('heading', { name: 'Asistencia de IA', exact: true }).scrollIntoViewIfNeeded();
+    assert.equal(await popup.locator('.app-scroll').evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    await popup.screenshot({ path: path.join(results, 'assistant-popup-380.png') });
+    const popupId = await popup.evaluate(async () => (await chrome.tabs.getCurrent()).id);
+    await worker.evaluate(tabId => chrome.tabs.setZoom(tabId, 2), popupId);
+    await popupAssistance.getByRole('button', { name: 'Generar propuesta', exact: true }).scrollIntoViewIfNeeded();
+    assert.equal(await popup.locator('.app-scroll').evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    await popup.screenshot({ path: path.join(results, 'assistant-popup-zoom-200.png') });
+    assert.equal(requestHosts.every(host => host.endsWith('.mercadolibre.com.ar')), true);
+    assert.deepEqual(errors, []);
+    console.log(JSON.stringify({ phase: 'assistant', policyDisabled: true, noGeneratedData: true, noProviderRequests: true, tasks: 3, consentBlocked: true, panel: true, popup: true, mobile: true, zoom200: true, screenshots: results }));
+  } else if (marketOnly) {
     await panel.getByRole('tab', { name: 'Mercado', exact: true }).click();
     await panel.getByText('Sin contactos guardados', { exact: true }).waitFor();
     assert.equal(await panel.getByRole('link', { name: 'Perfil guardado', exact: true }).count(), 0);
