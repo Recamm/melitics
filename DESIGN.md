@@ -22,5 +22,18 @@ provisional MeliExtension, sin marcas ni recursos de MercadoToolkit.
 - Fuentes, iconos y estilos se empaquetan localmente. Imagenes de producto
   limitadas al CDN publico mlstatic, sin referrer y sin cookies extraidas.
 
-La identidad definitiva, calculadora, historial, ofertas y contactos pertenecen
-a sus hitos. Las pruebas con fixtures no certifican publicaciones reales.
+- Rentabilidad comparte panel y popup mediante dos pestanas accesibles: Resumen
+  y Rentabilidad. Flechas/Home/End cambian de vista sin perder el borrador local.
+  Cargos manuales vacios, importes decimales locales, errores por campo y moneda
+  explicita; no conversiones ni tarifas oficiales supuestas. No usar tarjetas
+  para agrupar formulario o resultados.
+- Resultado principal de ganancia con cifras tabulares; perdida con signo y
+  color rojo, no solo color. Recibido, margen sobre venta, retorno sobre costo
+  y equilibrio por separado. Desglose, supuestos, fuente, fecha y version en
+  detalles; simulador oficial como enlace externo, sin automatizar sesiones.
+- El borrador se conserva entre vistas y se reinicia por publicacion/seleccion
+  o cambio de moneda. Vive solo en memoria, no en la pagina anfitriona ni un
+  servicio remoto. El almacenamiento historico pertenece al hito 5.
+
+La identidad definitiva, historial, ofertas y contactos pertenecen a sus hitos.
+Las pruebas con fixtures no certifican publicaciones reales.

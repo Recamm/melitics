@@ -1,9 +1,9 @@
 # Plan de implementacion: extension propia para MercadoLibre
 
 Fecha: 2026-11-01.
-Estado: analisis estatico completado; hitos 1, 2 y 3 implementados y verificados.
+Estado: analisis estatico completado; hitos 1-4 implementados y verificados.
 Implementacion de la app: autorizada por el usuario para comenzar este plan.
-Proceso guiado: esperar indicacion antes de continuar con el hito 4.
+Proceso guiado: esperar indicacion antes de continuar con el hito 5.
 
 ## Objetivo y restricciones
 
@@ -607,14 +607,109 @@ Limites: no se certificaron selectores contra publicaciones actuales reales,
 Chrome 120 instalado por separado ni el clic fisico de la toolbar. Se ejercito
 el popup como pagina propia de la extension y se verifico su registro en el
 manifiesto. El perfil habitual de Brave y la extension analizada no se tocaron.
-No hay calculadora, historial, enriquecimiento remoto ni IA en este hito.
+Al cierre del hito 3 no habia calculadora, historial, enriquecimiento remoto ni IA.
+
+## Hito 4 implementado
+
+Autorizacion: el usuario indico "prosegui" tras el cierre del hito 3.
+
+Resultado:
+
+- Contratos estrictos FeeScenario/FeeResult, junto con Money de solo importes
+	no negativos y SignedMoney para recibido/ganancia que pueden representar una
+	perdida. Precio, costo y cargos deben compartir moneda y exponente correcto.
+	Fuente manual, fecha UTC y version manual-half-up-v1 acompanan el escenario
+	y los resultados completos o incompletos; no se atribuyen a MercadoLibre.
+- Calculo puro con enteros seguros y BigInt solo interno. Comision sobre venta
+	en puntos basicos; cargo fijo, envio, impuestos y financiacion como importes
+	fijos ingresados. Redondeo mitad hacia arriba por cargo en la unidad menor.
+	Recibido = precio - cargos; ganancia = recibido - costo. Margen sobre venta
+	y retorno sobre costo se devuelven separadamente en puntos basicos.
+- Equilibrio: menor precio en unidades enteras cuya ganancia no es negativa,
+	aplicando el mismo redondeo y manteniendo costos/tasas constantes. No supone
+	escalones, categorias, cuotas ni logistica universales. Con tasa >= 100%,
+	denominador cero o indicador fuera del rango seguro se muestra no calculable,
+	no un cero ficticio. Una perdida o recibido negativo conserva su signo.
+- Todos los cargos faltantes son null. No se calcula un neto hasta que cada
+	campo este completo; un cero ingresado explicitamente es valido. Entradas
+	invalidas, monedas mezcladas y desbordes se rechazan sin resultados exactos
+	inventados. El formateador monetario compartido conserva centavos y signo,
+	incluso para perdidas menores a una unidad y el limite de entero seguro.
+- Pestanas Resumen/Rentabilidad en panel y popup, navegables con teclado.
+	Borradores locales conservados al alternar vistas; reinicio por identidad de
+	publicacion, seleccion o moneda, sin conversion inventada. Un precio manual
+	no se sobrescribe al refrescar la referencia; restablecer es una accion explicita.
+- Controles con etiqueta, errores por campo, desglose de cargos, supuestos y
+	enlace al simulador oficial. El enlace se comprobo y redirige al login de
+	MercadoLibre: no se automatizo esa sesion ni se usaron endpoints internos.
+- El worker anuncia completedMilestone=4 y profitability=available. Historial
+	sigue no disponible e IA desactivada. No se agregaron permisos, dependencias
+	del producto, servicios remotos ni escrituras de escenarios en storage.
+
+Verificacion realizada:
+
+1. RED/GREEN inicial del escenario del plan: precio 10000, comision 1000 bps,
+	 fijo 200, envio 500, impuestos 300, costo 4000 y financiacion 0 producen
+	 recibido 8000, ganancia 4000, margen 4000 bps, retorno 10000 bps y equilibrio
+	 5556. En la UI ARS son $ 100,00, $ 80,00, $ 40,00, 40%, 100% y $ 55,56.
+2. 29 pruebas de dominio cubren faltantes por campo, costo/precio cero, perdida,
+	 tasas >= 100%, redondeo ARS/BRL/CLP/USD, minimo equilibrio bajo redondeo,
+	 entradas invalidas, desborde, preservacion de fuente y resultados JSON seguros.
+	 Cinco casos nuevos de formato cubren centavos positivos/negativos y limite seguro.
+3. RED/GREEN de seis pruebas de FeesView y tres nuevas de integracion en App:
+	 borrador al alternar, reinicio por publicacion/seleccion y foco tras carga.
+	 La primera comprobacion de controles detecto acceso tardio al evento React;
+	 se capturo el valor antes del updater y las mismas pruebas pasaron.
+4. npm run typecheck y npm run build pasaron. npm run test aprobo 174 pruebas
+	 en nueve archivos, 43 mas que en el hito 3. npm audit reporto cero
+	 vulnerabilidades conocidas; diagnosticos del editor y diff de espacios pasaron.
+5. tests/browser-smoke.mjs --fees-only aprobo calculo completo, perdida,
+	 datos invalidos, moneda, tabs/teclado, reinicio SPA y foco del panel abierto
+	 con Rentabilidad seleccionada. Brave cargo el bundle de produccion con un
+	 perfil temporal nuevo, nunca el habitual. No hubo errores de pagina.
+6. Capturas financieras inspeccionadas en panel 1280/1920 px, viewport de
+	 320 px y popup de 380 px. Zoom real 200% en panel/popup, resultados accesibles
+	 por scroll y sin desborde horizontal. Se corrigio una letra aislada en el tab
+	 estrecho y se verifico que Rentabilidad permanezca en una linea al 200%.
+7. El flujo completo previo de Brave y las regresiones de respuestas tardias
+	del popup pasaron tras integrar las pestanas. Se conservan Shadow DOM,
+	 estilos anfitriones, preferencias, navegacion y limites de datos publicos.
+
+Comprobacion reproducible:
+
+```powershell
+npm run test -- src/features/fees/calculate.test.ts src/features/fees/FeesView.test.tsx
+npm run typecheck
+npm run build
+npm run test
+```
+
+Con la herramienta temporal y Brave configurados como en el hito 3:
+
+```powershell
+node tests/browser-smoke.mjs --fees-only
+```
+
+La vista local http://localhost:5173/src/ui/preview.html incluye Rentabilidad.
+El build final pesa 982.14 kB. Las herramientas de navegador son temporales,
+no dependencias del producto; los perfiles de prueba se eliminan al terminar.
+
+Limites: calculadora de escenarios manuales, no cotizacion de tarifas oficiales
+ni validacion contra una liquidacion real. El equilibrio mantiene los cargos
+fijos y la tasa del escenario; no incorpora umbrales de categorias, cuotas ni
+costos logisticos variables. Los borradores/metadatos viven en memoria durante
+el montaje: no sobreviven al cierre del panel/popup ni se sincronizan entre
+ellos. La persistencia historica es alcance del hito 5. BRL/CLP/USD certifican
+solo aritmetica/formato, no extraccion de otros mercados. Se mantienen los
+limites de pruebas sinteticas, Chrome minimo no instalado y toolbar del hito 3.
 
 Estado de avance:
 
 - [x] Hito 1: base instalable y permisos.
 - [x] Hito 2: extraccion y normalizacion.
 - [x] Hito 3: vista rapida y navegacion.
-- [ ] Hitos 4-8: no iniciados.
+- [x] Hito 4: calculadora de rentabilidad manual.
+- [ ] Hitos 5-8: no iniciados.
 
 ## Validacion y pendientes del plan
 
@@ -628,7 +723,7 @@ Estado de avance:
 
 Identidad visual acordada en DESIGN.md; el nombre MeliExtension sigue provisional.
 Decisiones pendientes: nombre definitivo y fuentes/presupuesto para hitos 6-7.
-El hito 4, calculadora de rentabilidad, espera indicacion conforme al proceso guiado.
+El hito 5, seguimiento e historial propio, espera indicacion conforme al proceso guiado.
 La autorizacion de implementacion no es permiso implicito para publicar ni para
 modificar la instalacion existente de Brave.
 

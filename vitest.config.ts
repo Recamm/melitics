@@ -8,7 +8,7 @@ export default defineConfig({
           name: 'unit',
           environment: 'node',
           include: ['src/**/*.test.{ts,tsx}', 'tests/**/*.test.ts'],
-          exclude: ['src/platforms/**/*.test.ts', 'src/ui/**/*.test.{ts,tsx}'],
+          exclude: ['src/platforms/**/*.test.ts', 'src/ui/**/*.test.{ts,tsx}', 'src/features/**/*.test.tsx'],
           clearMocks: true,
           restoreMocks: true,
         },
@@ -17,7 +17,7 @@ export default defineConfig({
         test: {
           name: 'dom',
           environment: 'jsdom',
-          include: ['src/platforms/**/*.test.ts', 'src/ui/**/*.test.{ts,tsx}'],
+          include: ['src/platforms/**/*.test.ts', 'src/ui/**/*.test.{ts,tsx}', 'src/features/**/*.test.tsx'],
           clearMocks: true,
           restoreMocks: true,
         },

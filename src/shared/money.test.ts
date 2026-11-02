@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { parseMoney } from './money';
+import { formatMoney, parseMoney } from './money';
 
 const argentina = { currency: 'ARS', locale: 'es-AR', format: 'localized' as const };
+
+describe('exact monetary display', () => {
+  it.each([
+    [1, '$\u00a00,01'], [-1, '-$\u00a00,01'], [-123456, '-$\u00a01.234,56'],
+    [Number.MAX_SAFE_INTEGER, '$\u00a090.071.992.547.409,91'],
+  ])('formats %s minor units without rounding away cents or a loss sign', (amountMinor, expected) => {
+    expect(formatMoney({ amountMinor, currency: 'ARS', exponent: 2 })).toBe(expected);
+  });
+  it('formats a zero-decimal currency without adding fictitious cents', () => {
+    expect(formatMoney({ amountMinor: -1234, currency: 'CLP', exponent: 0 })).toBe('-CLP\u00a01.234');
+  });
+});
 
 describe('money normalization', () => {
   it.each([

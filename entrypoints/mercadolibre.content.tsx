@@ -68,7 +68,7 @@ export default defineContentScript({
             });
             const disconnect = observePublicPage(document, () => controller.navigate(location.href));
             controller.navigate(location.href);
-            return { root, controller, disconnect, focus: () => container.querySelector<HTMLHeadingElement>('h1')?.focus() };
+            return { root, controller, disconnect, focus: () => (container.querySelector<HTMLElement>('[role="tabpanel"]:not([hidden]) h1') ?? container.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]'))?.focus() };
           },
           onRemove(mounted) { mounted?.controller.stop(); mounted?.disconnect(); mounted?.root.unmount(); },
         });

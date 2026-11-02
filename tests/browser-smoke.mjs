@@ -11,6 +11,7 @@ const profile = await mkdtemp(path.join(tmpdir(), 'meli-brave-ui-'));
 const results = process.env.MELI_BROWSER_RESULTS ?? await mkdtemp(path.join(tmpdir(), 'meli-browser-results-'));
 const navigationOnly = process.argv.includes('--navigation-only');
 const popupRacesOnly = process.argv.includes('--popup-races-only');
+const feesOnly = process.argv.includes('--fees-only');
 await mkdir(results, { recursive: true });
 let context;
 
@@ -32,7 +33,7 @@ try {
   const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker', { timeout: 15000 });
   const extensionId = new URL(worker.url()).host;
 
-  if (!navigationOnly && !popupRacesOnly) {
+  if (!navigationOnly && !popupRacesOnly && !feesOnly) {
     const preview = await context.newPage();
     for (const [state, text] of [
       ['ready', 'Captura actual'], ['partial', 'Datos parciales'], ['loading', 'Actualizando'],
@@ -59,7 +60,84 @@ try {
     version: 1, requestId: crypto.randomUUID(), operation, payload: {},
   }), { tabId, operation });
 
-  if (popupRacesOnly) {
+  if (feesOnly) {
+    const fillScenario = async surface => {
+      for (const [label, value] of [
+        ['Precio de venta', '100'], ['Costo del producto', '40'], ['Comisi\u00f3n (%)', '10'],
+        ['Cargo fijo', '2'], ['Env\u00edo a tu cargo', '5'], ['Impuestos fijos', '3'], ['Financiaci\u00f3n fija', '0'],
+      ]) await surface.getByLabel(label, { exact: true }).fill(value);
+      assert.equal(await surface.getByLabel('Ganancia neta', { exact: true }).innerText(), '$\u00a040,00');
+      assert.equal(await surface.getByLabel('Monto recibido', { exact: true }).innerText(), '$\u00a080,00');
+      assert.equal(await surface.getByLabel('Margen sobre venta', { exact: true }).innerText(), '40,00%');
+      assert.equal(await surface.getByLabel('Retorno sobre costo', { exact: true }).innerText(), '100,00%');
+    };
+    await panel.getByRole('tab', { name: 'Rentabilidad', exact: true }).click();
+    assert.equal(await panel.getByLabel('Ganancia neta', { exact: true }).innerText(), 'No calculable');
+    await fillScenario(panel);
+    for (const width of [1280, 1920, 320]) {
+      await page.setViewportSize({ width, height: width === 320 ? 640 : 900 });
+      await panel.getByRole('heading', { name: 'Rentabilidad', exact: true }).scrollIntoViewIfNeeded();
+      assert.equal(await panel.locator('.app-scroll').evaluate(el => el.scrollWidth <= el.clientWidth), true);
+      await page.screenshot({ path: path.join(results, `fees-panel-${width}.png`) });
+    }
+    await panel.getByRole('tab', { name: 'Resumen', exact: true }).click();
+    await page.keyboard.press('ArrowRight');
+    assert.equal(await panel.getByLabel('Costo del producto', { exact: true }).inputValue(), '40');
+    await panel.getByLabel('Costo del producto', { exact: true }).fill('90');
+    assert.equal(await panel.getByLabel('Ganancia neta', { exact: true }).innerText(), '-$\u00a010,00');
+    await panel.getByLabel('Costo del producto', { exact: true }).fill('-1');
+    assert.equal(await panel.getByLabel('Costo del producto', { exact: true }).getAttribute('aria-invalid'), 'true');
+    assert.equal(await panel.getByLabel('Ganancia neta', { exact: true }).innerText(), 'No calculable');
+    await fillScenario(panel);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await worker.evaluate(tabId => chrome.tabs.setZoom(tabId, 2), tabId);
+    assert.equal(await worker.evaluate(tabId => chrome.tabs.getZoom(tabId), tabId), 2);
+    assert.equal(await panel.locator('.app-scroll').evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    await panel.getByRole('heading', { name: 'Rentabilidad', exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: path.join(results, 'fees-panel-zoom-200.png') });
+    await worker.evaluate(tabId => chrome.tabs.setZoom(tabId, 1), tabId);
+    await panel.getByRole('button', { name: 'Restablecer escenario', exact: true }).click();
+    assert.equal(await panel.getByLabel('Costo del producto', { exact: true }).inputValue(), '');
+    await fillScenario(panel);
+    await page.locator('#return-focus').focus();
+    await panelRequest('panel.open');
+    assert.equal(await panel.getByRole('heading', { name: 'Rentabilidad', exact: true }).evaluate(el => el.getRootNode().activeElement === el), true);
+
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    await page.bringToFront();
+    await popup.reload();
+    await popup.getByRole('heading', { name: 'Camara de prueba', exact: true }).waitFor();
+    await popup.getByRole('tab', { name: 'Rentabilidad', exact: true }).click();
+    await fillScenario(popup);
+    await popup.setViewportSize({ width: 380, height: 600 });
+    await popup.getByRole('heading', { name: 'Rentabilidad', exact: true }).scrollIntoViewIfNeeded();
+    await popup.screenshot({ path: path.join(results, 'fees-popup-380.png') });
+    const popupId = await popup.evaluate(async () => (await chrome.tabs.getCurrent()).id);
+    await worker.evaluate(tabId => chrome.tabs.setZoom(tabId, 2), popupId);
+    assert.equal(await popup.evaluate(() => innerWidth), 190);
+    assert.equal(await popup.getByRole('tab', { name: 'Rentabilidad', exact: true }).locator('span').evaluate(el => {
+      const range = document.createRange(); range.selectNodeContents(el); return range.getClientRects().length;
+    }), 1);
+    assert.equal(await popup.locator('.app-scroll').evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    await popup.getByRole('heading', { name: 'Rentabilidad', exact: true }).scrollIntoViewIfNeeded();
+    await popup.screenshot({ path: path.join(results, 'fees-popup-zoom-200.png') });
+    await popup.getByLabel('Ganancia neta', { exact: true }).scrollIntoViewIfNeeded();
+    await popup.screenshot({ path: path.join(results, 'fees-popup-results-zoom-200.png') });
+    assert.equal(await popup.getByLabel('Ganancia neta', { exact: true }).innerText(), '$\u00a040,00');
+    await worker.evaluate(tabId => chrome.tabs.setZoom(tabId, 1), popupId);
+    await popup.getByLabel('Moneda', { exact: true }).selectOption('CLP');
+    assert.equal(await popup.getByLabel('Precio de venta', { exact: true }).inputValue(), '');
+    assert.equal(await popup.getByLabel('Costo del producto', { exact: true }).inputValue(), '');
+    await page.evaluate(() => {
+      document.head.querySelectorAll('script,meta,link').forEach(el => el.remove());
+      history.pushState({}, '', '/MLA-234567890-publicacion-b-_JM');
+      document.querySelector('.ui-pdp-title').textContent = 'Otra publicacion';
+    });
+    await panel.getByRole('tabpanel', { name: 'Rentabilidad', exact: true }).getByText('Otra publicacion', { exact: true }).waitFor();
+    assert.equal(await panel.getByLabel('Costo del producto', { exact: true }).inputValue(), '');
+    console.log(JSON.stringify({ phase: 'fees', scenario: true, loss: true, invalid: true, tabs: true, reset: true, currency: true, navigationReset: true, focus: true, zoom200: true, screenshots: results }));
+  } else if (popupRacesOnly) {
     const firstState = (await panelRequest('panel.get')).data;
     const popupWithDeferredRequests = async deferInitial => {
       const popup = await context.newPage();

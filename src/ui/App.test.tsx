@@ -16,6 +16,41 @@ function state(name = 'listing'): PanelState {
 }
 
 describe('public product panel', () => {
+  it('keeps a fee draft across accessible tab changes', async () => {
+    const user = userEvent.setup();
+    render(<App state={state()} mode="panel" onRefresh={vi.fn()} />);
+    await user.click(screen.getByRole('tab', { name: 'Rentabilidad' }));
+    await user.type(screen.getByLabelText('Costo del producto'), '40');
+    await user.click(screen.getByRole('tab', { name: 'Rentabilidad' }));
+    await user.keyboard('{ArrowLeft}');
+    expect(screen.getByRole('tab', { name: 'Resumen' }).getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Resumen' }));
+    await user.keyboard('{ArrowRight}');
+    expect((screen.getByLabelText('Costo del producto') as HTMLInputElement).value).toBe('40');
+  });
+
+  it('resets monetary drafts for a different publication, including a new selection at the same URL', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<App state={state()} mode="panel" onRefresh={vi.fn()} />);
+    await user.click(screen.getByRole('tab', { name: 'Rentabilidad' }));
+    await user.type(screen.getByLabelText('Costo del producto'), '40');
+    const next = state();
+    if (!next.snapshot) throw new Error('Missing test snapshot');
+    next.snapshot = { ...next.snapshot, canonicalUrl: 'https://articulo.mercadolibre.com.ar/MLA-987654321-segundo', listingId: 'MLA987654321' };
+    rerender(<App state={next} mode="panel" onRefresh={vi.fn()} />);
+    expect((screen.getByLabelText('Costo del producto') as HTMLInputElement).value).toBe('');
+    await user.type(screen.getByLabelText('Costo del producto'), '50');
+    next.snapshot = { ...next.snapshot, listingId: 'MLA246810123' };
+    rerender(<App state={next} mode="panel" onRefresh={vi.fn()} />);
+    expect((screen.getByLabelText('Costo del producto') as HTMLInputElement).value).toBe('');
+  });
+
+  it('focuses the product after an explicitly opened panel finishes loading', () => {
+    const { rerender } = render(<App state={{ status: 'loading', snapshot: null, stale: false, message: null }} mode="panel" onRefresh={vi.fn()} autoFocus />);
+    rerender(<App state={state()} mode="panel" onRefresh={vi.fn()} autoFocus />);
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Camara de prueba' }));
+  });
+
   it('shows product, price, seller, IDs and field provenance without session values', () => {
     render(<App state={state()} mode="panel" onRefresh={vi.fn()} />);
     expect(screen.getByRole('heading', { name: 'Camara de prueba' })).toBeTruthy();

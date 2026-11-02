@@ -66,11 +66,12 @@ describe('message protocol', () => {
       requestId,
       ok: true,
       data: {
-        completedMilestone: 3,
+        completedMilestone: 4,
         mode: 'local',
         networkEnabled: false,
         capabilities: {
           analysis: 'available',
+          profitability: 'available',
           history: 'unavailable',
           assistant: 'disabled',
         },

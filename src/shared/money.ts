@@ -1,4 +1,16 @@
-import { CURRENCY_EXPONENTS, currencySchema, type Money } from './contracts';
+import { CURRENCY_EXPONENTS, currencySchema, type Money, type SignedMoney } from './contracts';
+
+export function formatMoney(money: Money | SignedMoney, locale = 'es-AR'): string {
+  const negative = money.amountMinor < 0;
+  const digits = String(Math.abs(money.amountMinor)).padStart(money.exponent + 1, '0');
+  const whole = BigInt(money.exponent ? digits.slice(0, -money.exponent) : digits);
+  const fraction = money.exponent ? digits.slice(-money.exponent) : '';
+  const signedWhole = negative ? whole === 0n ? -0 : -whole : whole;
+  return new Intl.NumberFormat(locale, {
+    style: 'currency', currency: money.currency,
+    minimumFractionDigits: money.exponent, maximumFractionDigits: money.exponent,
+  }).formatToParts(signedWhole).map((part) => part.type === 'fraction' ? fraction : part.value).join('');
+}
 
 export type MoneyFormat = {
   currency: string;

@@ -13,6 +13,59 @@ export const moneySchema = z.strictObject({
 
 export type Money = z.infer<typeof moneySchema>;
 
+export const signedMoneySchema = z.strictObject({
+  ...moneySchema.shape,
+  amountMinor: z.number().int().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER),
+}).refine((money) => money.exponent === CURRENCY_EXPONENTS[money.currency]);
+
+export type SignedMoney = z.infer<typeof signedMoneySchema>;
+export const FEE_MONEY_FIELDS = ['price', 'cost', 'fixedFee', 'shipping', 'taxes', 'financing'] as const;
+export const FEE_FIELDS = [...FEE_MONEY_FIELDS, 'commissionBps'] as const;
+export const feeRulesSchema = z.strictObject({
+  source: z.literal('manual'),
+  version: z.literal('manual-half-up-v1'),
+  observedAt: z.iso.datetime(),
+});
+
+export const feeScenarioSchema = z.strictObject({
+  currency: currencySchema,
+  price: moneySchema.nullable(),
+  cost: moneySchema.nullable(),
+  commissionBps: z.number().int().min(0).max(1000000).nullable(),
+  fixedFee: moneySchema.nullable(),
+  shipping: moneySchema.nullable(),
+  taxes: moneySchema.nullable(),
+  financing: moneySchema.nullable(),
+  rules: feeRulesSchema,
+}).superRefine((scenario, context) => {
+  for (const field of FEE_MONEY_FIELDS) {
+    if (scenario[field] && scenario[field].currency !== scenario.currency) {
+      context.addIssue({ code: 'custom', path: [field], message: 'Currency mismatch' });
+    }
+  }
+});
+
+export type FeeScenario = z.infer<typeof feeScenarioSchema>;
+export const feeResultSchema = z.discriminatedUnion('status', [
+  z.strictObject({
+    status: z.literal('complete'),
+    commission: moneySchema, deductions: moneySchema,
+    payout: signedMoneySchema, profit: signedMoneySchema,
+    marginBps: z.number().int().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER).nullable(),
+    returnOnCostBps: z.number().int().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER).nullable(),
+    breakEven: moneySchema.nullable(),
+    rules: feeRulesSchema,
+  }),
+  z.strictObject({
+    status: z.literal('incomplete'),
+    missing: z.array(z.enum(FEE_FIELDS)).min(1),
+    rules: feeRulesSchema,
+  }),
+  z.strictObject({ status: z.literal('invalid'), reason: z.enum(['invalid-scenario', 'overflow']) }),
+]);
+
+export type FeeResult = z.infer<typeof feeResultSchema>;
+
 export const publicImageUrlSchema = z.url().refine((value) => {
   const url = new URL(value);
   return url.protocol === 'https:' && !url.username && !url.password && !url.port
@@ -83,22 +136,24 @@ export const DEFAULT_PREFERENCES: Readonly<Preferences> = {
 };
 
 export const runtimeStatusSchema = z.strictObject({
-  completedMilestone: z.literal(3),
+  completedMilestone: z.literal(4),
   mode: z.literal('local'),
   networkEnabled: z.literal(false),
   capabilities: z.strictObject({
     analysis: z.literal('available'),
+    profitability: z.literal('available'),
     history: z.literal('unavailable'),
     assistant: z.literal('disabled'),
   }),
 });
 
 export const RUNTIME_STATUS: z.infer<typeof runtimeStatusSchema> = {
-  completedMilestone: 3,
+  completedMilestone: 4,
   mode: 'local',
   networkEnabled: false,
   capabilities: {
     analysis: 'available',
+    profitability: 'available',
     history: 'unavailable',
     assistant: 'disabled',
   },
