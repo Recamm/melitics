@@ -106,12 +106,13 @@ export function HistoryOptions() {
 	const explanation = confirmation?.type === 'import' ? `Combinar ${confirmation.archive.publications.length} publicaciones y ${confirmation.archive.observations.length} capturas. Se conservan los datos actuales. Los duplicados no se agregan.`
 		: confirmation?.type === 'prune' ? `Eliminar capturas anteriores a ${new Date(Date.now() - confirmation.days * 86400000).toISOString().slice(0, 19)} UTC y guardar ${confirmation.days} dias como retencion propuesta. No se aplicara automaticamente.`
 			: confirmation?.type === 'remove' ? `Eliminar ${confirmation.key} y todas sus capturas. Esta accion no se puede deshacer.`
-				: `Eliminar ${info?.publicationCount ?? 0} publicaciones y ${info?.observationCount ?? 0} capturas. Esta accion no se puede deshacer.`;
+				: `Eliminar ${info?.publicationCount ?? 0} publicaciones, ${info?.observationCount ?? 0} capturas y ${info?.contactCount ?? 0} contactos. Esta accion no se puede deshacer.`;
 
 	return <main className="meli-app app-options">
 		<header className="app-toolbar"><div className="brand"><Package size={18} aria-hidden="true" /><strong>MeliExtension</strong></div><h1>Historial propio</h1><button className="icon-button" aria-label="Actualizar historial" data-tooltip="Actualizar historial" disabled={busy} onClick={() => { void run(async () => 'Historial actualizado.'); }}><RefreshCw size={18} aria-hidden="true" /></button></header>
 		<section className="history-management" aria-label="Archivos y almacenamiento">
 			<div className="history-limits"><span>{info ? `${info.publicationCount} / 100 publicaciones` : 'Hasta 100 publicaciones'}</span><span>{info ? `${info.observationCount} / 50000 capturas` : 'Hasta 50000 capturas'}</span><span>Archivos de hasta 64 MB &middot; Datos locales</span></div>
+			<p className="history-coverage">{info?.contactCount ?? 0} / 1000 contactos locales. JSON/CSV v1 incluyen solo historial.</p>
 			<div className="management-controls"><label className="compact-field">Formato<select aria-label="Formato" value={format} onChange={event => setFormat(event.currentTarget.value as 'json' | 'csv')}><option value="json">JSON v1</option><option value="csv">CSV v1</option></select></label>
 				<button className="icon-button" aria-label="Exportar historial" data-tooltip="Exportar historial" disabled={busy || !info} onClick={() => { void run(download); }}><Download size={18} aria-hidden="true" /></button>
 				<label className={`secondary-button import-control ${busy ? 'is-disabled' : ''}`}><Upload size={16} aria-hidden="true" />Importar archivo<input className="sr-only" type="file" accept=".json,.csv,application/json,text/csv" disabled={busy || !info} onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void prepareImport(file); }} /></label>

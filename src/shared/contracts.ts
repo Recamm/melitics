@@ -100,6 +100,72 @@ export const publicPageSnapshotSchema = z.strictObject({
 
 export type PublicPageSnapshot = z.infer<typeof publicPageSnapshotSchema>;
 
+export const marketplaceIdSchema = z.string().regex(/^MLA[1-9][0-9]{4,19}$/);
+export const publicSellerIdSchema = z.string().regex(/^[1-9][0-9]{0,19}$/);
+export const offerSourceSchema = z.strictObject({
+  kind: z.enum(['public-page', 'authorized-api']),
+  url: z.url().max(2048).refine(value => {
+    const url = marketplaceUrl(value); return !!url && !url.search && !url.hash && pageIdentity(url) !== null;
+  }),
+  observedAt: z.iso.datetime().transform(value => new Date(value).toISOString()),
+});
+export const paymentSegmentSchema = z.enum(['direct', 'installments-interest-free', 'installments-with-interest', 'unknown']);
+export type PaymentSegment = z.infer<typeof paymentSegmentSchema>;
+export const offerSnapshotSchema = z.strictObject({
+  siteId: z.literal('MLA'), productId: marketplaceIdSchema, listingId: marketplaceIdSchema,
+  sellerId: publicSellerIdSchema.nullable(), sellerName: z.string().min(1).max(200).nullable(),
+  price: moneySchema.nullable(),
+  installments: z.strictObject({ count: z.number().int().min(1).max(48).nullable(), interest: z.enum(['interest-free', 'with-interest', 'unknown']), total: moneySchema.nullable() }),
+  shipping: z.strictObject({ full: z.boolean().nullable(), free: z.boolean().nullable(), cost: moneySchema.nullable() }),
+  winner: z.boolean().nullable(), source: offerSourceSchema,
+}).refine(offer => {
+  const url = marketplaceUrl(offer.source.url); const identity = url && pageIdentity(url);
+  const sameMoney = [offer.installments.total, offer.shipping.cost].every(money => !money || !offer.price || (money.currency === offer.price.currency && money.exponent === offer.price.exponent));
+  const total = offer.installments.total?.amountMinor;
+  return offer.productId !== offer.listingId && identity
+    && (identity.kind === 'catalog' ? identity.productId === offer.productId : identity.listingId === offer.listingId)
+    && sameMoney && !(offer.shipping.free === true && (offer.shipping.cost?.amountMinor ?? 0) !== 0)
+    && !(offer.shipping.free === false && offer.shipping.cost?.amountMinor === 0)
+    && !(offer.installments.count === 1 && offer.installments.interest === 'with-interest')
+    && (total === undefined || !offer.price || (offer.installments.interest === 'interest-free' ? total === offer.price.amountMinor : total >= offer.price.amountMinor));
+});
+export type OfferSnapshot = z.infer<typeof offerSnapshotSchema>;
+export const buyboxObservationSchema = z.strictObject({
+  siteId: z.literal('MLA'), productId: marketplaceIdSchema, currency: currencySchema,
+  segment: paymentSegmentSchema.exclude(['unknown']), winnerListingId: marketplaceIdSchema.nullable(),
+  source: offerSourceSchema,
+}).refine(observation => {
+  const url = marketplaceUrl(observation.source.url); const identity = url && pageIdentity(url);
+  return identity && identity.kind === 'catalog' && identity.productId === observation.productId && observation.winnerListingId !== observation.productId;
+});
+export type BuyboxObservation = z.infer<typeof buyboxObservationSchema>;
+export const buyboxSummarySchema = z.strictObject({
+  knownSamples: z.number().int().min(0), unknownSamples: z.number().int().min(0), wins: z.number().int().min(0),
+  winBps: z.number().int().min(0).max(10000).nullable(), firstAt: z.iso.datetime().nullable(), lastAt: z.iso.datetime().nullable(),
+  observedDays: z.number().int().min(0).max(90), periodDays: z.union([z.literal(7), z.literal(30), z.literal(90)]),
+});
+export type BuyboxSummary = z.infer<typeof buyboxSummarySchema>;
+
+export function sellerContactKey(contact: { sellerId: string; field: 'profile'; value: string }): string { return JSON.stringify(['MLA', contact.sellerId, contact.field, contact.value]); }
+export const sellerContactSchema = z.strictObject({
+  key: z.string().min(1).max(2300), siteId: z.literal('MLA'), sellerId: publicSellerIdSchema,
+  field: z.literal('profile'), value: z.url().max(2048).refine(value => {
+    const url = marketplaceUrl(value); return !!url && !url.search && !url.hash && /^\/(?:perfil|tienda)\/[^/]+\/?$/i.test(url.pathname);
+  }),
+  sourceUrl: offerSourceSchema.shape.url,
+  observedAt: offerSourceSchema.shape.observedAt, expiresAt: offerSourceSchema.shape.observedAt,
+  verification: z.literal('unconfirmed'),
+}).refine(contact => contact.key === sellerContactKey(contact) && Date.parse(contact.expiresAt) === Date.parse(contact.observedAt) + 30 * 86400000);
+export type SellerContact = z.infer<typeof sellerContactSchema>;
+export const marketplaceResultSchema = z.discriminatedUnion('status', [
+  z.strictObject({ status: z.literal('unavailable'), reason: z.literal('no-authorized-source'), offers: z.array(z.never()), buybox: z.array(z.never()) }),
+  z.strictObject({ status: z.literal('ready'), sourceId: z.string().min(1).max(100), offers: z.array(offerSnapshotSchema).max(500), buybox: z.array(buyboxObservationSchema).max(50000) }),
+]);
+export type MarketplaceResult = z.infer<typeof marketplaceResultSchema>;
+export const marketplacePageSchema = z.strictObject({
+  offers: z.array(offerSnapshotSchema).max(500), buybox: z.array(buyboxObservationSchema).max(50000), nextCursor: z.string().min(1).max(256).nullable(),
+});
+
 export const publicationKeySchema = z.string().regex(/^MLA:(listing|catalog):MLA[1-9][0-9]{4,19}$/);
 
 function safeHistoryUrl(value: string): boolean {
@@ -165,6 +231,7 @@ export const historyInfoSchema = z.strictObject({
   publicationCount: z.number().int().min(0).max(100), observationCount: z.number().int().min(0).max(50000),
   publicationLimit: z.literal(100), observationLimit: z.literal(50000),
   retentionDays: z.union([z.literal(7), z.literal(30), z.literal(90)]),
+  contactCount: z.number().int().min(0).max(1000).optional(),
 });
 export type HistoryInfo = z.infer<typeof historyInfoSchema>;
 
@@ -205,25 +272,33 @@ export const DEFAULT_PREFERENCES: Readonly<Preferences> = {
 };
 
 export const runtimeStatusSchema = z.strictObject({
-  completedMilestone: z.literal(5),
+  completedMilestone: z.literal(6),
   mode: z.literal('local'),
   networkEnabled: z.literal(false),
   capabilities: z.strictObject({
     analysis: z.literal('available'),
     profitability: z.literal('available'),
     history: z.literal('available'),
+    catalogComparison: z.literal('available'),
+    catalog: z.literal('unavailable'),
+    buybox: z.literal('unavailable'),
+    contacts: z.literal('available'),
     assistant: z.literal('disabled'),
   }),
 });
 
 export const RUNTIME_STATUS: z.infer<typeof runtimeStatusSchema> = {
-  completedMilestone: 5,
+  completedMilestone: 6,
   mode: 'local',
   networkEnabled: false,
   capabilities: {
     analysis: 'available',
     profitability: 'available',
     history: 'available',
+    catalogComparison: 'available',
+    catalog: 'unavailable',
+    buybox: 'unavailable',
+    contacts: 'available',
     assistant: 'disabled',
   },
 };

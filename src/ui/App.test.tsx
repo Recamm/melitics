@@ -16,12 +16,12 @@ function state(name = 'listing'): PanelState {
 }
 
 describe('public product panel', () => {
-  it('includes a third accessible history tab without losing the fee draft', async () => {
+  it('includes a fourth accessible market tab with keyboard wraparound', async () => {
     const user = userEvent.setup();
     render(<App state={state()} mode="panel" onRefresh={vi.fn()} />);
     await user.click(screen.getByRole('tab', { name: 'Resumen' }));
     await user.keyboard('{End}');
-    expect(screen.getByRole('tab', { name: 'Historial' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tab', { name: 'Mercado' }).getAttribute('aria-selected')).toBe('true');
     await user.keyboard('{ArrowRight}');
     expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Resumen' }));
   });

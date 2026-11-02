@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { deleteDB } from 'idb';
 import { describe, expect, it, vi } from 'vitest';
-import { createHistoryMessageHandler, createMessageHandler } from './protocol';
+import { createHistoryMessageHandler, createMessageHandler, createMarketplaceMessageHandler } from './protocol';
 import { createHistoryStore } from '../background/store';
 import type { PublicPageSnapshot } from '../shared/contracts';
 
@@ -35,6 +35,25 @@ function setup() {
 }
 
 describe('message protocol', () => {
+  it('binds public seller operations to the sender publication and refuses cross-seller deletion', async () => {
+    const name = `protocol-sellers-${crypto.randomUUID()}`; const history = createHistoryStore(name);
+    const handle = createMarketplaceMessageHandler({ extensionId, history });
+    const snapshot: PublicPageSnapshot = { siteId: 'MLA', locale: 'es-AR', kind: 'catalog', listingId: null, productId: 'MLA12345', canonicalUrl: marketplaceSender.url,
+      title: 'Fixture', price: null, imageUrl: null, seller: { id: '98765', name: 'Fixture', url: 'https://www.mercadolibre.com.ar/perfil/FIXTURE_A' }, observedAt: new Date().toISOString(), extractorRevision: 'public-v1', provenance: {} };
+    const message = (operation: string, payload: unknown) => ({ ...request, operation, payload });
+    try {
+      expect(await handle(message('sellers.save', { snapshot }), marketplaceSender)).toMatchObject({ ok: true });
+      expect(await handle(message('sellers.read', { snapshot }), marketplaceSender)).toMatchObject({ ok: true, data: { contacts: [{ sellerId: '98765' }] } });
+      expect(await handle(message('sellers.read', { snapshot: { ...snapshot, productId: 'MLA99999', canonicalUrl: 'https://www.mercadolibre.com.ar/p/MLA99999' } }), marketplaceSender)).toMatchObject({ ok: false, error: { code: 'forbidden' } });
+      const key = JSON.stringify(['MLA', '12345', 'profile', snapshot.seller!.url]);
+      expect(await handle(message('sellers.remove', { snapshot, key, confirmed: true }), marketplaceSender)).toMatchObject({ ok: false, error: { code: 'forbidden' } });
+      expect(await handle(message('catalog.read', { productId: 'MLA12345' }), marketplaceSender)).toMatchObject({ ok: true, data: { result: { status: 'unavailable', reason: 'no-authorized-source' } } });
+      expect(await handle(message('catalog.read', { productId: 'MLA99999' }), marketplaceSender)).toMatchObject({ ok: false, error: { code: 'forbidden' } });
+      expect(await handle(message('sellers.save', { snapshot }), { ...marketplaceSender, id: 'foreign' })).toMatchObject({ ok: false, error: { code: 'forbidden' } });
+      expect(await handle(message('sellers.remove', { snapshot, key, confirmed: false }), extensionSender)).toMatchObject({ ok: false, error: { code: 'invalid-input' } });
+    } finally { await history.close(); await deleteDB(name); }
+  });
+
   it('commits explicit public captures while reserving imports and destructive operations to own pages', async () => {
     const name = `protocol-history-${crypto.randomUUID()}`;
     const history = createHistoryStore(name);
@@ -102,13 +121,17 @@ describe('message protocol', () => {
       requestId,
       ok: true,
       data: {
-        completedMilestone: 5,
+        completedMilestone: 6,
         mode: 'local',
         networkEnabled: false,
         capabilities: {
           analysis: 'available',
           profitability: 'available',
           history: 'available',
+          catalogComparison: 'available',
+          catalog: 'unavailable',
+          buybox: 'unavailable',
+          contacts: 'available',
           assistant: 'disabled',
         },
       },

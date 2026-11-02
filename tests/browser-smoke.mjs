@@ -13,6 +13,7 @@ const navigationOnly = process.argv.includes('--navigation-only');
 const popupRacesOnly = process.argv.includes('--popup-races-only');
 const feesOnly = process.argv.includes('--fees-only');
 const historyOnly = process.argv.includes('--history-only');
+const marketOnly = process.argv.includes('--market-only');
 await mkdir(results, { recursive: true });
 let context;
 
@@ -38,7 +39,7 @@ try {
   const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker', { timeout: 15000 });
   const extensionId = new URL(worker.url()).host;
 
-  if (!navigationOnly && !popupRacesOnly && !feesOnly && !historyOnly) {
+  if (!navigationOnly && !popupRacesOnly && !feesOnly && !historyOnly && !marketOnly) {
     const preview = await context.newPage();
     for (const [state, text] of [
       ['ready', 'Captura actual'], ['partial', 'Datos parciales'], ['loading', 'Actualizando'],
@@ -55,7 +56,16 @@ try {
   const fixture = (await readFile('tests/fixtures/listing.html', 'utf8'))
     .replace('<body>', '<body style="margin:24px;background:#f8faf9;font-family:sans-serif"><main style="border-bottom:1px solid #d9e1dd"><button id="return-focus">Volver al contenido</button>')
     .replace('</body>', '</main></body>');
-  await context.route('https://**.mercadolibre.com.ar/**', route => route.fulfill({ status: 200, contentType: 'text/html', body: historyOnly && route.request().url().includes('987654321') ? fixture.replaceAll('123456789', '987654321') : fixture }));
+  const catalogFixture = marketOnly ? await readFile('tests/fixtures/catalog.html', 'utf8') : '';
+  await context.route('https://**.mercadolibre.com.ar/**', route => {
+    let body = fixture;
+    if ((historyOnly || marketOnly) && route.request().url().includes('987654321')) {
+      body = fixture.replaceAll('123456789', '987654321');
+      if (marketOnly) body = body.replace('"identifier": "98765"', '"identifier": "12345"').replaceAll('TIENDA_PRUEBA', 'TIENDA_B');
+    }
+    if (marketOnly && route.request().url().includes('/p/MLA24681012')) body = catalogFixture;
+    return route.fulfill({ status: 200, contentType: 'text/html', body });
+  });
   const page = await context.newPage();
   await page.goto('https://articulo.mercadolibre.com.ar/MLA-123456789-camara-_JM');
   const panel = page.locator('meli-extension-panel');
@@ -65,7 +75,60 @@ try {
     version: 1, requestId: crypto.randomUUID(), operation, payload: {},
   }), { tabId, operation });
 
-  if (historyOnly) {
+  if (marketOnly) {
+    await panel.getByRole('tab', { name: 'Mercado', exact: true }).click();
+    await panel.getByText('Sin contactos guardados', { exact: true }).waitFor();
+    assert.equal(await panel.getByRole('link', { name: 'Perfil guardado', exact: true }).count(), 0);
+    await panel.getByRole('button', { name: 'Guardar perfil p\u00fablico', exact: true }).click();
+    await panel.getByRole('link', { name: 'Perfil guardado', exact: true }).waitFor();
+    const second = await context.newPage(); await second.goto('https://articulo.mercadolibre.com.ar/MLA-987654321-camara-_JM');
+    const secondPanel = second.locator('meli-extension-panel'); await secondPanel.getByRole('tab', { name: 'Mercado', exact: true }).click();
+    await secondPanel.getByText('Sin contactos guardados', { exact: true }).waitFor();
+    assert.equal(await secondPanel.getByRole('link', { name: 'Perfil guardado', exact: true }).count(), 0);
+    await page.reload(); await panel.getByRole('tab', { name: 'Mercado', exact: true }).click();
+    await panel.getByRole('link', { name: 'Perfil guardado', exact: true }).waitFor();
+    for (const width of [1280, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      assert.equal(await panel.locator('.app-scroll').evaluate(el => el.scrollWidth <= el.clientWidth), true);
+      await page.screenshot({ path: path.join(results, `market-panel-${width}.png`) });
+    }
+    await worker.evaluate(tabId => chrome.tabs.setZoom(tabId, 2), tabId);
+    assert.equal(await panel.locator('.app-scroll').evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    assert.equal(await panel.locator('.view-tabs').evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    assert.equal(await panel.locator('.view-tab span').evaluateAll(elements => elements.every(el => el.getBoundingClientRect().height <= Number.parseFloat(getComputedStyle(el).lineHeight) * 1.1)), true);
+    assert.equal(await panel.locator('.app-toolbar').evaluate(el => el.getBoundingClientRect().height <= 140), true);
+    assert.equal(await panel.locator('.app-scroll').evaluate(el => el.getBoundingClientRect().height >= 120), true);
+    await page.screenshot({ path: path.join(results, 'market-panel-zoom-200.png') });
+    await worker.evaluate(tabId => chrome.tabs.setZoom(tabId, 1), tabId); await page.setViewportSize({ width: 1280, height: 900 });
+    await panel.getByRole('button', { name: 'Eliminar contacto', exact: true }).click();
+    const dialog = panel.getByRole('dialog', { name: 'Eliminar contacto', exact: true }); await dialog.waitFor();
+    assert.equal(await dialog.getByRole('button', { name: 'Cancelar', exact: true }).evaluate(el => el === el.getRootNode().activeElement), true);
+    await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' });
+    assert.equal(await panel.getByRole('link', { name: 'Perfil guardado', exact: true }).count(), 1);
+    assert.equal(await panel.getByRole('button', { name: 'Eliminar contacto', exact: true }).evaluate(el => el === el.getRootNode().activeElement), true);
+    await panel.getByRole('button', { name: 'Eliminar contacto', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Confirmar borrado', exact: true }).click();
+    await panel.getByText('Sin contactos guardados', { exact: true }).waitFor();
+    await panel.getByRole('button', { name: 'Guardar perfil p\u00fablico', exact: true }).click(); await panel.getByRole('link', { name: 'Perfil guardado', exact: true }).waitFor();
+    await page.evaluate(() => {
+      const node = document.querySelector('script[type="application/ld+json"]'); const data = JSON.parse(node.textContent);
+      data.sku = 'MLA987654321'; data.offers.url = 'https://articulo.mercadolibre.com.ar/MLA-987654321-camara-_JM';
+      data.offers.seller.identifier = '12345'; data.offers.seller.url = 'https://www.mercadolibre.com.ar/perfil/TIENDA_B';
+      node.textContent = JSON.stringify(data); document.querySelector('link[rel="canonical"]').href = data.offers.url;
+      history.pushState({}, '', '/MLA-987654321-camara-_JM');
+    });
+    await panel.getByRole('tabpanel', { name: 'Mercado', exact: true }).getByText('12345', { exact: true }).waitFor();
+    await panel.getByText('Sin contactos guardados', { exact: true }).waitFor();
+    assert.equal(await panel.getByRole('link', { name: 'Perfil guardado', exact: true }).count(), 0);
+    const catalogPage = await context.newPage(); await catalogPage.goto('https://www.mercadolibre.com.ar/p/MLA24681012');
+    const catalogPanel = catalogPage.locator('meli-extension-panel'); await catalogPanel.getByRole('tab', { name: 'Mercado', exact: true }).click();
+    await catalogPanel.getByText('Sin fuente autorizada', { exact: true }).waitFor();
+    assert.equal(await catalogPanel.getByRole('table', { name: 'Ofertas observadas', exact: true }).count(), 0);
+    assert.equal(await catalogPanel.getByRole('button', { name: 'Guardar perfil p\u00fablico', exact: true }).isDisabled(), true);
+    await catalogPage.screenshot({ path: path.join(results, 'market-unavailable.png') });
+    assert.deepEqual(errors, []);
+    console.log(JSON.stringify({ phase: 'market', unavailableSource: true, explicitSave: true, reloadPersistence: true, twoSellers: true, spaIsolation: true, confirmations: true, escapeFocus: true, mobile: true, zoom200: true, screenshots: results }));
+  } else if (historyOnly) {
     const second = await context.newPage();
     await second.goto('https://articulo.mercadolibre.com.ar/MLA-987654321-camara-_JM');
     const secondPanel = second.locator('meli-extension-panel');

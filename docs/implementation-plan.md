@@ -1,9 +1,9 @@
 # Plan de implementacion: extension propia para MercadoLibre
 
 Fecha: 2026-11-01.
-Estado: analisis estatico completado; hitos 1-5 implementados y verificados.
+Estado: analisis estatico completado; hitos 1-6 implementados y verificados localmente.
 Implementacion de la app: autorizada por el usuario para comenzar este plan.
-Proceso guiado: esperar indicacion antes de continuar con el hito 6.
+Proceso guiado: esperar indicacion antes de continuar con el hito 7.
 
 ## Objetivo y restricciones
 
@@ -349,6 +349,55 @@ de la fuente. Si no hay fuente, capacidad unavailable sin datos de demostracion.
 Ventas diarias, posicion de mercado y perfiles requieren metodologia y cobertura;
 no inferirlos del texto publico de unidades vendidas ni de una unica captura.
 Actualizar paises y seguimiento programado solo tras aprobar sus fuentes y pruebas.
+
+Resultado del hito 6:
+
+- OfferSnapshot, fuente y condiciones monetarias validados con Zod. Comparacion
+	local por moneda, segmento, numero de cuotas, Full, costo/envio y fecha UTC.
+	Se conserva la ultima observacion por publicacion; condiciones incompletas
+	quedan aisladas. Minimo comparable y ganador observado son independientes.
+	El importe mostrado es el total sin envio; solo se comparan costos de envio iguales.
+- Buybox usa capturas con ganador conocido como denominador, no tiempo transcurrido.
+	Ventanas 7/30/90 dias, moneda/segmento separados, deduplicacion UTC, conflictos
+	como desconocidos y cobertura explicita. Sin muestras no se genera porcentaje.
+- Pestana Mercado en panel/popup, conservando las otras vistas y sus borradores.
+	Sin fuente autorizada no se muestran ofertas, ganadores ni datos de demostracion.
+	Las vistas de ofertas con datos validos se probaron con fixtures unitarios;
+	no se certifico una fuente real ni cobertura completa de vendedores.
+- Solo perfil publico HTTPS observado con ID de vendedor: guardado explicito,
+	procedencia, identidad no confirmada y vencimiento a 30 dias de la observacion.
+	Contactos vencidos siguen identificados, sin borrado ni busqueda automatica.
+	IndexedDB conserva el store reservado y sus claves v1, sin migracion estructural;
+	limite 1000, duplicados por vendedor/perfil, transaccion y borrado confirmado.
+	JSON/CSV de historial v1 no incluyen contactos; se indica en la gestion y se
+	incluyen los contactos en el conteo y confirmacion de borrado global.
+- Mensajes propios validados y vinculados a publicacion/vendedor. Guardas de
+	generacion impiden mostrar contactos de A al navegar a B; se rechaza borrado
+	de otro vendedor, enlaces script y emisores ajenos. No se inspeccionan sesiones.
+- Servicio sin adapter configurado: unavailable/no-authorized-source. El adapter
+	opt-in se probo solo con Responses sinteticas: paginacion acotada y validada,
+	timeout total 10 s incluso si ignora cancelacion, maximo dos reintentos por pagina
+	para fallos idempotentes/transitorios, Retry-After, ningun reintento 401/403,
+	429 sin cabecera como rate-limited y cancelacion por AbortSignal.
+- Fuente consultada: documentacion oficial de autenticacion/autorizacion de
+	MercadoLibre, https://developers.mercadolibre.com.ar/es_ar/autenticacion-y-autorizacion.
+	Documenta OAuth server-side y tokens por Authorization. La ruta tentativa
+	productos-de-catalogo devolvio 404. No se eligio ni habilito un endpoint de
+	ofertas: requiere autorizacion y, si hay secretos/OAuth, backend propio.
+- Verificacion: 235 pruebas en 19 archivos, typecheck y build de produccion,
+	npm audit --omit=dev sin vulnerabilidades. Sin nuevos permisos/dependencias de
+	producto; CSP connect-src self, storage y Argentina permanecen iguales.
+- Brave con bundle real y perfiles temporales: --market-only comprobo guardado,
+	persistencia tras recarga, dos vendedores, aislamiento SPA, borrar/Cancelar/Escape,
+	retorno de foco, catalogo sin fuente, 320 px y zoom real 200%. Se corrigieron
+	desbordamiento, altura inutil de cabecera y corte de nombres de pestanas.
+	Regresiones --fees-only y --history-only pasaron, incluidas reinicio real,
+	consulta offline, transferencias, grafico y confirmaciones; sin errores de pagina.
+	Evidencia: meli-market-results-a4970985-889d-426f-a218-63ac060624ff en TEMP.
+- Bundle final 1.63 MB. Persisten avisos documentados: HistoryChart de 501.52 kB
+	diferido en opciones e import dinamico de client sin separacion efectiva.
+	No se infieren ventas, ranking, identidades ni porcentaje de tiempo Buybox.
+	IA sigue desactivada. Esperar indicacion para el hito 7.
 
 ### Hito 7: asistencia de IA
 

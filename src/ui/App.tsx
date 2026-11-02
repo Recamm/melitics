@@ -4,6 +4,8 @@ import type { PanelState, Preferences } from '../shared/contracts';
 import { formatMoney } from '../shared/money';
 import { FeesView } from '../features/fees/FeesView';
 import { HistoryView } from '../features/history/HistoryView';
+import { OffersView } from '../features/catalog/OffersView';
+import { SellerView } from '../features/sellers/SellerView';
 
 export type AppProps = {
   state: PanelState;
@@ -26,7 +28,7 @@ export function App(props: AppProps) {
   const title = useRef<HTMLHeadingElement>(null);
   const tabs = useRef<HTMLDivElement>(null);
   const initialFocus = useRef(false);
-  const [view, setView] = useState<'summary' | 'fees' | 'history'>('summary');
+  const [view, setView] = useState<'summary' | 'fees' | 'history' | 'market'>('summary');
   const [failedImage, setFailedImage] = useState<string | null>(null);
   const [managementError, setManagementError] = useState(false);
   useEffect(() => {
@@ -38,7 +40,7 @@ export function App(props: AppProps) {
   const image = snapshot?.imageUrl && snapshot.imageUrl !== failedImage ? snapshot.imageUrl : null;
   const feeIdentity = `${snapshot?.listingId ?? snapshot?.productId ?? 'manual'}:${snapshot?.canonicalUrl ?? 'manual'}:${snapshot?.price?.currency ?? 'ARS'}`;
 
-  function selectView(next: 'summary' | 'fees' | 'history'): void {
+  function selectView(next: 'summary' | 'fees' | 'history' | 'market'): void {
     setView(next);
     tabs.current?.querySelector<HTMLButtonElement>(`[data-view="${next}"]`)?.focus();
   }
@@ -55,14 +57,15 @@ export function App(props: AppProps) {
       </div>
     </header>
     <div ref={tabs} className="view-tabs" role="tablist" aria-label="Vistas" onKeyDown={(event) => {
-      const views = ['summary', 'fees', 'history'] as const;
-      const next = event.key === 'Home' ? 'summary' : event.key === 'End' ? 'history'
-        : event.key === 'ArrowLeft' || event.key === 'ArrowRight' ? views[(views.indexOf(view) + (event.key === 'ArrowRight' ? 1 : 2)) % 3] : null;
+      const views = ['summary', 'fees', 'history', 'market'] as const;
+      const next = event.key === 'Home' ? 'summary' : event.key === 'End' ? 'market'
+        : event.key === 'ArrowLeft' || event.key === 'ArrowRight' ? views[(views.indexOf(view) + (event.key === 'ArrowRight' ? 1 : views.length - 1)) % views.length] : null;
       if (next) { event.preventDefault(); selectView(next); }
     }}>
       <button className="view-tab" id={`${titleId}-summary-tab`} role="tab" data-view="summary" aria-selected={view === 'summary'} aria-controls={`${titleId}-summary`} tabIndex={view === 'summary' ? 0 : -1} onClick={() => selectView('summary')}><List size={15} aria-hidden="true" /><span>Resumen</span></button>
       <button className="view-tab" id={`${titleId}-fees-tab`} role="tab" data-view="fees" aria-selected={view === 'fees'} aria-controls={`${titleId}-fees`} tabIndex={view === 'fees' ? 0 : -1} onClick={() => selectView('fees')}><Calculator size={15} aria-hidden="true" /><span>Rentabilidad</span></button>
       <button className="view-tab" id={`${titleId}-history-tab`} role="tab" data-view="history" aria-selected={view === 'history'} aria-controls={`${titleId}-history`} tabIndex={view === 'history' ? 0 : -1} onClick={() => selectView('history')}><History size={15} aria-hidden="true" /><span>Historial</span></button>
+      <button className="view-tab" id={`${titleId}-market-tab`} role="tab" data-view="market" aria-selected={view === 'market'} aria-controls={`${titleId}-market`} tabIndex={view === 'market' ? 0 : -1} onClick={() => selectView('market')}><Store size={15} aria-hidden="true" /><span>Mercado</span></button>
     </div>
     <div className="app-scroll">
       <div className="capture-line" role="status"><span className={`status-dot ${state.stale || partial || state.status === 'error' || state.status === 'unsupported' ? 'warning' : ''}`} /><span>{badge}</span><span className="market">MLA</span></div>
@@ -89,6 +92,9 @@ export function App(props: AppProps) {
       </div>
       <div id={`${titleId}-history`} role="tabpanel" aria-labelledby={`${titleId}-history-tab`} hidden={view !== 'history'}>
         {view === 'history' ? <HistoryView key={snapshot?.listingId ?? snapshot?.productId ?? 'none'} snapshot={snapshot} disabled={state.stale || state.status !== 'ready'} {...(props.onManage ? { onManage: props.onManage } : {})} /> : null}
+      </div>
+      <div id={`${titleId}-market`} role="tabpanel" aria-labelledby={`${titleId}-market-tab`} hidden={view !== 'market'}>
+        {view === 'market' ? <><OffersView key={feeIdentity} snapshot={snapshot} disabled={state.stale || state.status !== 'ready'} /><SellerView key={`${feeIdentity}:${snapshot?.seller?.id}`} snapshot={snapshot} disabled={state.stale || state.status !== 'ready'} /></> : null}
       </div>
     </div>
     {mode === 'popup' ? <footer className="popup-controls"><label className="preference"><input type="checkbox" name="panelEnabled" checked={props.preferences?.panelEnabled ?? false} disabled={!props.preferences || !props.onToggle} onChange={(event) => props.onToggle?.(event.currentTarget.checked)} />Panel en publicaciones</label><button className="primary-button" onClick={props.onOpen} disabled={!snapshot || !props.onOpen}><PanelRightOpen size={17} aria-hidden="true" />Abrir panel</button></footer> : null}

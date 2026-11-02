@@ -23,7 +23,7 @@ provisional MeliExtension, sin marcas ni recursos de MercadoToolkit.
   limitadas al CDN publico mlstatic, sin referrer y sin cookies extraidas.
 
 - Rentabilidad comparte panel y popup mediante pestanas accesibles. Resumen,
-  Rentabilidad e Historial; flechas/Home/End cambian de vista sin perder el borrador local.
+  Rentabilidad, Historial y Mercado; flechas/Home/End cambian de vista sin perder el borrador local.
   Cargos manuales vacios, importes decimales locales, errores por campo y moneda
   explicita; no conversiones ni tarifas oficiales supuestas. No usar tarjetas
   para agrupar formulario o resultados.
@@ -48,5 +48,19 @@ provisional MeliExtension, sin marcas ni recursos de MercadoToolkit.
 - JSON/CSV propios versionados, sin conversion monetaria ni conexion remota.
   Dejar de seguir conserva el historial; no hay limpieza o rastreo automatico.
 
-La identidad definitiva, ofertas y contactos pertenecen a sus hitos.
+- Mercado agrupa catalogo/Buybox y contactos por vendedor sin nuevas tarjetas.
+  Grilla de cuatro pestanas en dos filas, con ancho adicional para Rentabilidad
+  en pantallas estrechas. A 200% la marca y herramientas se apilan y dejan altura
+  util; los nombres de las pestanas permanecen completos y los datos en una columna.
+- Ofertas con moneda, cuotas/interes, envio, Full y fecha explicitos; tablas con
+  desplazamiento propio. Minimo y ganador separados; porcentaje de capturas con
+  muestra, ventana y cobertura. Sin fuente autorizada no se presentan resultados.
+- Guardado manual del perfil publico por ID, identidad no confirmada, fechas UTC
+  y vigencia de 30 dias. Borrado en dialogo nativo: Cancelar recibe foco solo al
+  abrir, Escape conserva contacto/panel y vuelve al comando. Navegacion A-B no
+  conserva visualmente contactos del vendedor anterior. Sin busquedas de personas.
+- Limite 1000 contactos, conteo en gestion y aviso de que JSON/CSV v1 solo contienen
+  historial. Borrado global informa tambien los contactos que se eliminaran.
+
+La identidad definitiva y las fuentes remotas requieren su aprobacion.
 Las pruebas con fixtures no certifican publicaciones reales.

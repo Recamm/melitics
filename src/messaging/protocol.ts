@@ -1,9 +1,11 @@
 import { z } from 'zod';
 import type { HistoryStore } from '../background/store';
 import { marketplaceUrl, pageIdentity } from '../platforms/mercadolibre/markets';
+import { createMarketplaceService } from '../services/marketplace';
 import {
   historyArchiveSchema, historyDataSchema, historyInfoSchema, historySnapshotSchema,
   followedPublicationSchema, publicationKeySchema,
+  sellerContactSchema, publicSellerIdSchema, marketplaceIdSchema, marketplaceResultSchema,
   errorCodeSchema,
   preferencesSchema,
   PROTOCOL_VERSION,
@@ -103,6 +105,53 @@ export const historyRequestSchema = z.discriminatedUnion('operation', [
   requestBase.extend({ operation: z.literal('history.clear'), payload: z.strictObject({ confirmed: z.literal(true) }) }),
 ]);
 export type HistoryRequest = z.infer<typeof historyRequestSchema>;
+export const marketplaceRequestSchema = z.discriminatedUnion('operation', [
+  requestBase.extend({ operation: z.enum(['sellers.read', 'sellers.save']), payload: z.strictObject({ snapshot: historySnapshotSchema }) }),
+  requestBase.extend({ operation: z.literal('sellers.remove'), payload: z.strictObject({ snapshot: historySnapshotSchema, key: z.string().min(1).max(2300), confirmed: z.literal(true) }) }),
+  requestBase.extend({ operation: z.literal('catalog.read'), payload: z.strictObject({ productId: marketplaceIdSchema }) }),
+]);
+export type MarketplaceRequest = z.infer<typeof marketplaceRequestSchema>;
+export const marketplaceResponseDataSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('contacts'), contacts: z.array(sellerContactSchema).max(1000) }),
+  z.strictObject({ kind: z.literal('marketplace'), result: marketplaceResultSchema }),
+  z.strictObject({ kind: z.literal('done') }),
+]);
+export const marketplaceResponseSchema = z.union([
+  z.strictObject({ version: z.literal(PROTOCOL_VERSION), requestId: z.uuid(), ok: z.literal(true), data: marketplaceResponseDataSchema }), responseSchema.options[1],
+]);
+export function createMarketplaceMessageHandler(options: { extensionId: string; history: HistoryStore }) {
+  const marketplace = createMarketplaceService();
+  return async (message: unknown, sender: unknown): Promise<z.infer<typeof marketplaceResponseSchema>> => {
+    if (!isTrustedSender(sender, options.extensionId)) return errorResponse('forbidden', 'Emisor no autorizado.');
+    const parsed = marketplaceRequestSchema.safeParse(message);
+    if (!parsed.success) return errorResponse('invalid-input', 'Mensaje no valido.');
+    const request = parsed.data; const context = senderSchema.parse(sender);
+    if (new URL(context.url).protocol !== 'chrome-extension:') {
+      const url = marketplaceUrl(context.url); const identity = url && pageIdentity(url);
+      const allowed = identity && (request.operation === 'catalog.read' ? identity.productId === request.payload.productId
+        : request.payload.snapshot.kind === identity.kind && request.payload.snapshot.productId === identity.productId && request.payload.snapshot.listingId === identity.listingId);
+      if (!allowed) return errorResponse('forbidden', 'Publicacion no autorizada.', request.requestId);
+    }
+    try {
+      let data: z.infer<typeof marketplaceResponseDataSchema>;
+      if (request.operation === 'catalog.read') data = { kind: 'marketplace', result: await marketplace.offers(request.payload.productId, new AbortController().signal) };
+      else {
+        const sellerId = publicSellerIdSchema.parse(request.payload.snapshot.seller?.id);
+        if (request.operation === 'sellers.read') data = { kind: 'contacts', contacts: await options.history.readContacts(sellerId) };
+        else if (request.operation === 'sellers.save') { await options.history.saveContact(request.payload.snapshot); data = { kind: 'done' }; }
+        else if (request.operation === 'sellers.remove') {
+          const { key, confirmed } = request.payload;
+          if (!(await options.history.readContacts(sellerId)).some(contact => contact.key === key)) return errorResponse('forbidden', 'Contacto no autorizado.', request.requestId);
+          await options.history.removeContact(key, confirmed); data = { kind: 'done' };
+        } else return errorResponse('unsupported', 'Operacion no disponible.', request.requestId);
+      }
+      return { version: PROTOCOL_VERSION, requestId: request.requestId, ok: true, data: marketplaceResponseDataSchema.parse(data) };
+    } catch (error) {
+      const code: ErrorCode = error instanceof z.ZodError ? 'invalid-input' : error && typeof error === 'object' && 'code' in error && errorCodeSchema.safeParse(error.code).success ? errorCodeSchema.parse(error.code) : 'internal';
+      return errorResponse(code, code === 'storage-full' ? 'Sin espacio para guardar contactos.' : 'No se pudo completar la operacion.', request.requestId);
+    }
+  };
+}
 export const historyResponseDataSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('data'), ...historyDataSchema.shape }),
   z.strictObject({ kind: z.literal('list'), publications: z.array(followedPublicationSchema).max(100) }),
